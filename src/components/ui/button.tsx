@@ -18,12 +18,18 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        // Trading-specific variants using our design system
+        success: "bg-success text-success-foreground hover:bg-success/90 shadow-success",
+        premium: "bg-gradient-premium text-premium-foreground hover:shadow-premium transition-all duration-300",
+        trading: "bg-gradient-primary text-primary-foreground hover:shadow-trading border border-primary/20",
+        hero: "bg-gradient-hero text-primary-foreground hover:shadow-premium border border-premium/30 font-semibold",
       },
       size: {
         default: "h-10 px-4 py-2",
         sm: "h-9 rounded-md px-3",
         lg: "h-11 rounded-md px-8",
         icon: "h-10 w-10",
+        hero: "h-12 px-8 py-3 text-base font-semibold",
       },
     },
     defaultVariants: {
