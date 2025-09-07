@@ -96,6 +96,7 @@ export type Database = {
           target_value: number | null
           title: string
           updated_at: string
+          user_progress: Json | null
         }
         Insert: {
           challenge_type: string
@@ -112,6 +113,7 @@ export type Database = {
           target_value?: number | null
           title: string
           updated_at?: string
+          user_progress?: Json | null
         }
         Update: {
           challenge_type?: string
@@ -128,164 +130,7 @@ export type Database = {
           target_value?: number | null
           title?: string
           updated_at?: string
-        }
-        Relationships: []
-      }
-      compliance_logs: {
-        Row: {
-          action: string
-          created_at: string
-          details: Json | null
-          id: string
-          ip_address: unknown | null
-          user_agent: string | null
-          user_id: string | null
-        }
-        Insert: {
-          action: string
-          created_at?: string
-          details?: Json | null
-          id?: string
-          ip_address?: unknown | null
-          user_agent?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          action?: string
-          created_at?: string
-          details?: Json | null
-          id?: string
-          ip_address?: unknown | null
-          user_agent?: string | null
-          user_id?: string | null
-        }
-        Relationships: []
-      }
-      credit_transactions: {
-        Row: {
-          amount: number
-          balance_after: number
-          created_at: string
-          description: string | null
-          id: string
-          related_order_id: string | null
-          related_subscription_id: string | null
-          transaction_type: Database["public"]["Enums"]["transaction_type"]
-          user_id: string
-        }
-        Insert: {
-          amount: number
-          balance_after: number
-          created_at?: string
-          description?: string | null
-          id?: string
-          related_order_id?: string | null
-          related_subscription_id?: string | null
-          transaction_type: Database["public"]["Enums"]["transaction_type"]
-          user_id: string
-        }
-        Update: {
-          amount?: number
-          balance_after?: number
-          created_at?: string
-          description?: string | null
-          id?: string
-          related_order_id?: string | null
-          related_subscription_id?: string | null
-          transaction_type?: Database["public"]["Enums"]["transaction_type"]
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "credit_transactions_related_subscription_id_fkey"
-            columns: ["related_subscription_id"]
-            isOneToOne: false
-            referencedRelation: "user_subscriptions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      leaderboard_entries: {
-        Row: {
-          calculated_at: string
-          id: string
-          leaderboard_id: string
-          portfolio_id: string | null
-          rank: number
-          score: number
-          user_id: string
-        }
-        Insert: {
-          calculated_at?: string
-          id?: string
-          leaderboard_id: string
-          portfolio_id?: string | null
-          rank: number
-          score: number
-          user_id: string
-        }
-        Update: {
-          calculated_at?: string
-          id?: string
-          leaderboard_id?: string
-          portfolio_id?: string | null
-          rank?: number
-          score?: number
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "leaderboard_entries_leaderboard_id_fkey"
-            columns: ["leaderboard_id"]
-            isOneToOne: false
-            referencedRelation: "leaderboards"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "leaderboard_entries_portfolio_id_fkey"
-            columns: ["portfolio_id"]
-            isOneToOne: false
-            referencedRelation: "portfolios"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      leaderboards: {
-        Row: {
-          created_at: string
-          description: string | null
-          end_date: string | null
-          id: string
-          is_active: boolean | null
-          metric: string
-          name: string
-          period: string
-          start_date: string | null
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          description?: string | null
-          end_date?: string | null
-          id?: string
-          is_active?: boolean | null
-          metric: string
-          name: string
-          period?: string
-          start_date?: string | null
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          description?: string | null
-          end_date?: string | null
-          id?: string
-          is_active?: boolean | null
-          metric?: string
-          name?: string
-          period?: string
-          start_date?: string | null
-          updated_at?: string
+          user_progress?: Json | null
         }
         Relationships: []
       }
@@ -525,9 +370,14 @@ export type Database = {
       }
       profiles: {
         Row: {
+          active_challenges: Json | null
           avatar_url: string | null
+          badges_earned: Json | null
           country: string | null
           created_at: string
+          credits_available: number | null
+          credits_total_earned: number | null
+          credits_total_spent: number | null
           email: string
           experience_level:
             | Database["public"]["Enums"]["experience_level"]
@@ -538,16 +388,23 @@ export type Database = {
             | Database["public"]["Enums"]["investment_goal"][]
             | null
           is_onboarded: boolean | null
+          last_credit_topup: string | null
           phone: string | null
+          protips_seen: Json | null
           risk_tolerance: number | null
           timezone: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          active_challenges?: Json | null
           avatar_url?: string | null
+          badges_earned?: Json | null
           country?: string | null
           created_at?: string
+          credits_available?: number | null
+          credits_total_earned?: number | null
+          credits_total_spent?: number | null
           email: string
           experience_level?:
             | Database["public"]["Enums"]["experience_level"]
@@ -558,16 +415,23 @@ export type Database = {
             | Database["public"]["Enums"]["investment_goal"][]
             | null
           is_onboarded?: boolean | null
+          last_credit_topup?: string | null
           phone?: string | null
+          protips_seen?: Json | null
           risk_tolerance?: number | null
           timezone?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          active_challenges?: Json | null
           avatar_url?: string | null
+          badges_earned?: Json | null
           country?: string | null
           created_at?: string
+          credits_available?: number | null
+          credits_total_earned?: number | null
+          credits_total_spent?: number | null
           email?: string
           experience_level?:
             | Database["public"]["Enums"]["experience_level"]
@@ -578,7 +442,9 @@ export type Database = {
             | Database["public"]["Enums"]["investment_goal"][]
             | null
           is_onboarded?: boolean | null
+          last_credit_topup?: string | null
           phone?: string | null
+          protips_seen?: Json | null
           risk_tolerance?: number | null
           timezone?: string | null
           updated_at?: string
@@ -598,6 +464,7 @@ export type Database = {
           title: string
           trigger_conditions: Json | null
           updated_at: string
+          user_interactions: Json | null
         }
         Insert: {
           category: string
@@ -610,6 +477,7 @@ export type Database = {
           title: string
           trigger_conditions?: Json | null
           updated_at?: string
+          user_interactions?: Json | null
         }
         Update: {
           category?: string
@@ -622,6 +490,7 @@ export type Database = {
           title?: string
           trigger_conditions?: Json | null
           updated_at?: string
+          user_interactions?: Json | null
         }
         Relationships: []
       }
@@ -736,6 +605,51 @@ export type Database = {
         }
         Relationships: []
       }
+      subscriptions: {
+        Row: {
+          cancelled_at: string | null
+          created_at: string
+          credit_transactions: Json | null
+          expires_at: string | null
+          id: string
+          plan_id: string
+          started_at: string
+          status: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          created_at?: string
+          credit_transactions?: Json | null
+          expires_at?: string | null
+          id?: string
+          plan_id: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          created_at?: string
+          credit_transactions?: Json | null
+          expires_at?: string | null
+          id?: string
+          plan_id?: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       trades: {
         Row: {
           created_at: string
@@ -802,209 +716,6 @@ export type Database = {
             columns: ["stock_id"]
             isOneToOne: false
             referencedRelation: "stocks"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      user_badges: {
-        Row: {
-          badge_id: string
-          earned_at: string
-          id: string
-          progress: number | null
-          user_id: string
-        }
-        Insert: {
-          badge_id: string
-          earned_at?: string
-          id?: string
-          progress?: number | null
-          user_id: string
-        }
-        Update: {
-          badge_id?: string
-          earned_at?: string
-          id?: string
-          progress?: number | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "user_badges_badge_id_fkey"
-            columns: ["badge_id"]
-            isOneToOne: false
-            referencedRelation: "badges"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      user_challenges: {
-        Row: {
-          challenge_id: string
-          claimed_at: string | null
-          completed_at: string | null
-          current_value: number | null
-          id: string
-          progress: number | null
-          reward_claimed: boolean | null
-          started_at: string
-          status: Database["public"]["Enums"]["challenge_status"]
-          user_id: string
-        }
-        Insert: {
-          challenge_id: string
-          claimed_at?: string | null
-          completed_at?: string | null
-          current_value?: number | null
-          id?: string
-          progress?: number | null
-          reward_claimed?: boolean | null
-          started_at?: string
-          status?: Database["public"]["Enums"]["challenge_status"]
-          user_id: string
-        }
-        Update: {
-          challenge_id?: string
-          claimed_at?: string | null
-          completed_at?: string | null
-          current_value?: number | null
-          id?: string
-          progress?: number | null
-          reward_claimed?: boolean | null
-          started_at?: string
-          status?: Database["public"]["Enums"]["challenge_status"]
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "user_challenges_challenge_id_fkey"
-            columns: ["challenge_id"]
-            isOneToOne: false
-            referencedRelation: "challenges"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      user_credits: {
-        Row: {
-          available_credits: number
-          created_at: string
-          id: string
-          last_topup_at: string | null
-          total_credits_earned: number
-          total_credits_spent: number
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          available_credits?: number
-          created_at?: string
-          id?: string
-          last_topup_at?: string | null
-          total_credits_earned?: number
-          total_credits_spent?: number
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          available_credits?: number
-          created_at?: string
-          id?: string
-          last_topup_at?: string | null
-          total_credits_earned?: number
-          total_credits_spent?: number
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      user_protips: {
-        Row: {
-          created_at: string
-          dismissed_at: string | null
-          id: string
-          is_dismissed: boolean | null
-          is_read: boolean | null
-          protip_id: string
-          read_at: string | null
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          dismissed_at?: string | null
-          id?: string
-          is_dismissed?: boolean | null
-          is_read?: boolean | null
-          protip_id: string
-          read_at?: string | null
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          dismissed_at?: string | null
-          id?: string
-          is_dismissed?: boolean | null
-          is_read?: boolean | null
-          protip_id?: string
-          read_at?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "user_protips_protip_id_fkey"
-            columns: ["protip_id"]
-            isOneToOne: false
-            referencedRelation: "protips"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      user_subscriptions: {
-        Row: {
-          cancelled_at: string | null
-          created_at: string
-          expires_at: string | null
-          id: string
-          plan_id: string
-          started_at: string
-          status: Database["public"]["Enums"]["subscription_status"]
-          stripe_customer_id: string | null
-          stripe_subscription_id: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          cancelled_at?: string | null
-          created_at?: string
-          expires_at?: string | null
-          id?: string
-          plan_id: string
-          started_at?: string
-          status?: Database["public"]["Enums"]["subscription_status"]
-          stripe_customer_id?: string | null
-          stripe_subscription_id?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          cancelled_at?: string | null
-          created_at?: string
-          expires_at?: string | null
-          id?: string
-          plan_id?: string
-          started_at?: string
-          status?: Database["public"]["Enums"]["subscription_status"]
-          stripe_customer_id?: string | null
-          stripe_subscription_id?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "user_subscriptions_plan_id_fkey"
-            columns: ["plan_id"]
-            isOneToOne: false
-            referencedRelation: "subscription_plans"
             referencedColumns: ["id"]
           },
         ]
