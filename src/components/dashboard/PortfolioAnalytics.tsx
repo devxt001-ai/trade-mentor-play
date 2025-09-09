@@ -16,52 +16,284 @@ import {
   BarChart,
   Bar
 } from "recharts";
-import { TrendingUp, TrendingDown, Activity, PieChart as PieChartIcon, BarChart3, Calendar } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, PieChart as PieChartIcon, BarChart3, Calendar, Loader2 } from "lucide-react";
+import { useMarketData } from "@/contexts/MarketDataContext";
+import { useTrading } from "@/contexts/TradingContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { useEffect, useState, useCallback } from "react";
+import { toast } from "sonner";
+import { StockQuote, HistoricalData, Order } from "@/services/api";
+
+
+// Define interfaces for portfolio data
+interface PortfolioMetric {
+  label: string;
+  value: string;
+  change: string;
+  trend: 'up' | 'down';
+  color: string;
+}
+
+interface PerformanceData {
+  date: string;
+  value: number;
+  previousValue?: number;
+}
+
+interface SectorAllocation {
+  sector: string;
+  value: number;
+  amount: number;
+}
+
+interface MonthlyReturn {
+  month: string;
+  returns: number;
+}
 
 export const PortfolioAnalytics = () => {
-  // Sample data for charts
-  const portfolioPerformance = [
-    { date: "Jan", value: 1000000, benchmark: 1000000 },
-    { date: "Feb", value: 1025000, benchmark: 1015000 },
-    { date: "Mar", value: 1045000, benchmark: 1020000 },
-    { date: "Apr", value: 1038000, benchmark: 1025000 },
-    { date: "May", value: 1065000, benchmark: 1030000 },
-    { date: "Jun", value: 1089000, benchmark: 1045000 },
-    { date: "Jul", value: 1112000, benchmark: 1055000 },
-    { date: "Aug", value: 1125000, benchmark: 1070000 },
-    { date: "Sep", value: 1158000, benchmark: 1085000 },
-  ];
+  const { isAuthenticated } = useAuth();
+  const { fetchQuotes: getQuotes, getHistoricalData, quotes, isLoading: isMarketDataLoading } = useMarketData();
+  const { getOrders, orders, isLoading: isOrdersLoading } = useTrading();
+  
+  // State for portfolio data
+  const [portfolioPerformance, setPortfolioPerformance] = useState<PerformanceData[]>([]);
+  const [sectorAllocation, setSectorAllocation] = useState<SectorAllocation[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-  const sectorAllocation = [
-    { sector: "IT", value: 35, amount: 410750 },
-    { sector: "Banking", value: 28, amount: 329300 },
-    { sector: "Healthcare", value: 15, amount: 176250 },
-    { sector: "Energy", value: 12, amount: 141150 },
-    { sector: "Auto", value: 10, amount: 117750 },
-  ];
+  const [monthlyReturns, setMonthlyReturns] = useState<MonthlyReturn[]>([]);
 
-  const monthlyReturns = [
-    { month: "Jan", returns: 2.5 },
-    { month: "Feb", returns: 1.8 },
-    { month: "Mar", returns: -0.7 },
-    { month: "Apr", returns: 2.9 },
-    { month: "May", returns: 1.2 },
-    { month: "Jun", returns: 3.1 },
-    { month: "Jul", returns: 0.9 },
-    { month: "Aug", returns: 2.8 },
-    { month: "Sep", returns: 1.5 },
-  ];
+  const [metrics, setMetrics] = useState<PortfolioMetric[]>([]);
+  
+  // Initialize metrics with default values
+  useEffect(() => {
+    setMetrics([
+      { label: "Total Return", value: "+15.8%", change: "+2.3%", trend: "up" as const, color: "success" },
+      { label: "Sharpe Ratio", value: "1.34", change: "+0.12", trend: "up" as const, color: "primary" },
+      { label: "Max Drawdown", value: "-3.2%", change: "+0.8%", trend: "up" as const, color: "destructive" },
+      { label: "Win Rate", value: "73%", change: "+5%", trend: "up" as const, color: "success" },
+      { label: "Beta", value: "0.89", change: "-0.05", trend: "down" as const, color: "muted" },
+      { label: "Alpha", value: "2.1%", change: "+0.3%", trend: "up" as const, color: "premium" },
+    ]);
+    
+    // Initialize monthly returns with sample data
+    setMonthlyReturns([
+      { month: "Jan", returns: 2.3 },
+      { month: "Feb", returns: 1.8 },
+      { month: "Mar", returns: -0.7 },
+      { month: "Apr", returns: 3.2 },
+      { month: "May", returns: 2.1 },
+      { month: "Jun", returns: 1.5 }
+    ]);
+  }, []);
 
   const COLORS = ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444'];
+  
+  // Fetch portfolio data when component mounts
+  useEffect(() => {
+    const fetchPortfolioData = async (): Promise<void> => {
+      if (!isAuthenticated) return;
+      
+      try {
+        setIsInitialLoad(true);
+        
+        // Get stock symbols from orders
+        await getOrders();
+        
+        // Extract unique symbols from orders
+        if (orders && orders.length > 0) {
+          const symbols: string[] = [...new Set(orders.map((order: Order) => order.symbol))];
+          
+          if (symbols.length > 0) {
+            await Promise.all([
+              getQuotes(symbols),
+              fetchHistoricalData()
+            ]);
+            
+            // Generate portfolio performance data
+            updatePortfolioMetrics();
+          } else {
+            // Fallback to default symbols if no orders found
+            getQuotes(['INFY', 'HDFCBANK', 'RELIANCE', 'TCS', 'SUNPHARMA']);
+            fetchHistoricalData();
+          }
+        } else {
+          // Fallback to default symbols if no orders found
+          getQuotes(['INFY', 'HDFCBANK', 'RELIANCE', 'TCS', 'SUNPHARMA']);
+          fetchHistoricalData();
+        }
+      } catch (error) {
+        console.error('Failed to fetch portfolio data:', error);
+        toast.error('Failed to load portfolio data');
+      } finally {
+        setIsInitialLoad(false);
+      }
+    };
+    
+    fetchPortfolioData();
+  }, [isAuthenticated]);
+  
+  // Update metrics when quotes or orders change
+  useEffect(() => {
+    if (quotes && quotes.length > 0 && orders) {
+      updatePortfolioMetrics();
+    }
+  }, [quotes, orders]);
+  
+  const fetchHistoricalData = async (): Promise<void> => {
+    try {
+      // Get historical data for the main portfolio stocks
+      const historicalData: HistoricalData = await getHistoricalData('INFY', '1m', 'day');
+      
+      if (historicalData && historicalData.candles) {
+        // Transform historical data for the performance chart
+        const transformedData: PerformanceData[] = historicalData.candles.slice(-9).map((candle: any[], index: number) => {
+          const date = new Date(candle[0]);
+          const month = date.toLocaleString('default', { month: 'short' });
+          return {
+            date: month,
+            value: 1000000 * (1 + (index * 0.02)),  // Simulated portfolio value
+            previousValue: 1000000 * (1 + (index * 0.015))  // Simulated benchmark value
+          };
+        });
+        
+        setPortfolioPerformance(transformedData);
+      }
+    } catch (error) {
+      toast.error('Failed to fetch historical data');
+      console.error('Error fetching historical data:', error);
+    }
+  };
+  
+  const updatePortfolioMetrics = useCallback((): void => {
+    if (!quotes || quotes.length === 0) return;
+    
+    // Calculate sector allocation based on quotes
+    interface SectorData {
+      value: number;
+      amount: number;
+    }
+    
+    interface SectorMap {
+      [key: string]: SectorData;
+    }
+    
+    const sectors: SectorMap = {
+      IT: { value: 0, amount: 0 },
+      Banking: { value: 0, amount: 0 },
+      Healthcare: { value: 0, amount: 0 },
+      Energy: { value: 0, amount: 0 },
+      Auto: { value: 0, amount: 0 }
+    };
+    
+    // Map stocks to sectors
+    const stockSectors: Record<string, string> = {
+      'INFY': 'IT',
+      'TCS': 'IT',
+      'HDFCBANK': 'Banking',
+      'SUNPHARMA': 'Healthcare',
+      'RELIANCE': 'Energy'
+    };
+    
+    // Calculate total portfolio value
+    let totalValue = 0;
+    quotes.forEach((quote: StockQuote) => {
+      const symbol = quote.symbol.split(':')[1] || quote.symbol;
+      const sector = stockSectors[symbol] || 'Other';
+      const quantity: number = symbol === 'INFY' ? 100 : symbol === 'HDFCBANK' ? 50 : 25;
+      const value: number = quote.ltp * quantity;
+      
+      if (sectors[sector]) {
+        sectors[sector].amount += value;
+      }
+      
+      totalValue += value;
+    });
+    
+    // Calculate percentages
+    Object.keys(sectors).forEach(sector => {
+      if (totalValue > 0) {
+        sectors[sector].value = Math.round((sectors[sector].amount / totalValue) * 100);
+      }
+    });
+    
+    // Transform to array format for chart
+    const newSectorAllocation: SectorAllocation[] = Object.keys(sectors).map((sector: string) => ({
+      sector,
+      value: sectors[sector].value,
+      amount: sectors[sector].amount
+    }));
+    
+    setSectorAllocation(newSectorAllocation);
+    
+    // Update metrics based on real data
+    const newMetrics: PortfolioMetric[] = [...metrics];
+    if (quotes.length > 0) {
+      // Calculate total return based on quotes
+      const totalReturn: string = ((totalValue - 1000000) / 1000000 * 100).toFixed(1);
+      newMetrics[0].value = `+${totalReturn}%`;
+      
+      // Update win rate based on orders
+        if (orders && orders.length > 0) {
+          const successfulOrders: number = orders.filter((order: Order) => 
+            order.status === 'COMPLETE' && order.tradedPrice !== undefined && order.limitPrice !== undefined && order.tradedPrice > order.limitPrice
+          ).length;
+          const winRate: number = Math.round((successfulOrders / orders.length) * 100);
+          newMetrics[3].value = `${winRate}%`;
+        }
+    }
+    
+    setMetrics(newMetrics);
+  }, [quotes, orders, metrics]);
 
-  const metrics = [
-    { label: "Total Return", value: "+15.8%", change: "+2.3%", trend: "up", color: "success" },
-    { label: "Sharpe Ratio", value: "1.34", change: "+0.12", trend: "up", color: "primary" },
-    { label: "Max Drawdown", value: "-3.2%", change: "+0.8%", trend: "up", color: "destructive" },
-    { label: "Win Rate", value: "73%", change: "+5%", trend: "up", color: "success" },
-    { label: "Beta", value: "0.89", change: "-0.05", trend: "down", color: "muted" },
-    { label: "Alpha", value: "2.1%", change: "+0.3%", trend: "up", color: "premium" },
-  ];
+
+  // Refresh portfolio data
+  const handleRefresh = async (): Promise<void> => {
+    if (!isAuthenticated) {
+      toast.error("Please log in to refresh data");
+      return;
+    }
+    
+    if (isRefreshing) return;
+    
+    try {
+      setIsRefreshing(true);
+      toast.success('Refreshing portfolio data...');
+      
+      // Get stock symbols from orders
+      await getOrders();
+      
+      // Extract unique symbols from orders
+      if (orders && orders.length > 0) {
+        const symbols: string[] = [...new Set(orders.map((order: Order) => order.symbol))];
+        
+        if (symbols.length > 0) {
+          await Promise.all([
+            getQuotes(symbols),
+            fetchHistoricalData()
+          ]);
+        } else {
+          // Fallback to default symbols if no orders found
+          await getQuotes(['INFY', 'HDFCBANK', 'RELIANCE', 'TCS', 'SUNPHARMA']);
+          await fetchHistoricalData();
+        }
+      } else {
+        // Fallback to default symbols if no orders found
+        await getQuotes(['INFY', 'HDFCBANK', 'RELIANCE', 'TCS', 'SUNPHARMA']);
+        await fetchHistoricalData();
+      }
+      
+      // Update portfolio metrics
+      updatePortfolioMetrics();
+      
+    } catch (error) {
+      console.error("Failed to refresh portfolio data:", error);
+      toast.error("Failed to refresh portfolio data");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -72,13 +304,27 @@ export const PortfolioAnalytics = () => {
             <Calendar className="w-4 h-4" />
             Last 30 Days
           </Button>
-          <Button variant="ghost" size="sm">Export Report</Button>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isMarketDataLoading || isOrdersLoading || isRefreshing}
+          >
+            {isMarketDataLoading || isOrdersLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              'Refresh Data'
+            )}
+          </Button>
         </div>
       </div>
 
       {/* Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {metrics.map((metric) => (
+        {metrics.map((metric: PortfolioMetric) => (
           <Card key={metric.label}>
             <CardContent className="p-4">
               <div className="space-y-2">
@@ -140,7 +386,7 @@ export const PortfolioAnalytics = () => {
                     />
                     <Line 
                       type="monotone" 
-                      dataKey="benchmark" 
+                      dataKey="previousValue" 
                       stroke="hsl(var(--muted-foreground))" 
                       strokeWidth={2}
                       strokeDasharray="5 5"
@@ -173,9 +419,9 @@ export const PortfolioAnalytics = () => {
                         outerRadius={80}
                         fill="#8884d8"
                         dataKey="value"
-                        label={({sector, value}) => `${sector}: ${value}%`}
+                        label={({sector, value}: {sector: string, value: number}) => `${sector}: ${value}%`}
                       >
-                        {sectorAllocation.map((entry, index) => (
+                        {sectorAllocation.map((entry: SectorAllocation, index: number) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
@@ -191,7 +437,7 @@ export const PortfolioAnalytics = () => {
                 <CardTitle>Sector Breakdown</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {sectorAllocation.map((sector, index) => (
+                {sectorAllocation.map((sector: SectorAllocation, index: number) => (
                   <div key={sector.sector} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div 

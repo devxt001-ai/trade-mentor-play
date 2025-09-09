@@ -1,28 +1,209 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, Search, Filter, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { TrendingUp, TrendingDown, Search, Filter, RefreshCw, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useMarketData } from "@/contexts/MarketDataContext";
+import { useTrading } from "@/contexts/TradingContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
+import { marketAPI, StockQuote, StockMetadata } from "@/services/api";
+
+// Define interface for stock display data
+interface StockDisplay {
+  symbol: string;
+  name: string;
+  price: string;
+  change: string;
+  percent: string;
+  volume: string;
+  trend: 'up' | 'down';
+  sector: string;
+  dayHigh: number;
+  dayLow: number;
+  yearHigh: number;
+  yearLow: number;
+}
+
+// Define interface for market index data
+interface MarketIndex {
+  name: string;
+  value: string;
+  change: string;
+  percent: string;
+}
 
 export const MarketFeed = () => {
   const [selectedStock, setSelectedStock] = useState<string | null>(null);
+  const { isAuthenticated } = useAuth();
+  const { fetchQuotes, quotes, isLoading: isMarketDataLoading } = useMarketData();
+  const { placeOrder } = useTrading();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isBuying, setIsBuying] = useState(false);
+  const [isSelling, setIsSelling] = useState(false);
   
-  const stocks = [
-    { symbol: "RELIANCE", name: "Reliance Industries", price: "2,847.50", change: "+24.75", percent: "+0.88%", volume: "1.2M", trend: "up", sector: "Energy" },
-    { symbol: "TCS", name: "Tata Consultancy Services", price: "3,456.20", change: "-12.30", percent: "-0.35%", volume: "890K", trend: "down", sector: "IT" },
-    { symbol: "INFY", name: "Infosys Limited", price: "1,789.40", change: "+45.60", percent: "+2.62%", volume: "2.1M", trend: "up", sector: "IT" },
-    { symbol: "HDFCBANK", name: "HDFC Bank", price: "1,634.80", change: "-8.90", percent: "-0.54%", volume: "756K", trend: "down", sector: "Banking" },
-    { symbol: "ICICIBANK", name: "ICICI Bank", price: "945.30", change: "+18.70", percent: "+2.02%", volume: "1.8M", trend: "up", sector: "Banking" },
-    { symbol: "BHARTIARTL", name: "Bharti Airtel", price: "1,234.60", change: "+32.10", percent: "+2.67%", volume: "1.5M", trend: "up", sector: "Telecom" },
-    { symbol: "HINDUNILVR", name: "Hindustan Unilever", price: "2,456.90", change: "-15.20", percent: "-0.61%", volume: "432K", trend: "down", sector: "FMCG" },
-    { symbol: "KOTAKBANK", name: "Kotak Mahindra Bank", price: "1,876.40", change: "+28.50", percent: "+1.54%", volume: "678K", trend: "up", sector: "Banking" },
-  ];
+  // State for available stocks from API
+  const [availableStocks, setAvailableStocks] = useState<StockMetadata[]>([]);
+  const [isLoadingStocks, setIsLoadingStocks] = useState(true);
+  
+  // Fetch available stocks from API
+  useEffect(() => {
+    const fetchAvailableStocks = async () => {
+      try {
+        setIsLoadingStocks(true);
+        const stocks = await marketAPI.getAvailableStocks();
+        setAvailableStocks(stocks);
+        
+        // Extract symbols for quotes fetching
+        const symbols = stocks.map((stock: StockMetadata) => stock.symbol.split(':')[1].replace('-EQ', ''));
+        if (isAuthenticated && symbols.length > 0) {
+          fetchQuotes(symbols);
+        }
+      } catch (error) {
+        console.error('Failed to fetch available stocks:', error);
+        toast.error('Failed to load stock symbols');
+      } finally {
+        setIsLoadingStocks(false);
+      }
+    };
+    
+    fetchAvailableStocks();
+  }, [isAuthenticated, fetchQuotes]);
+  
+  // Create a mapping of stock symbols to metadata
+  interface StockMetadataMap {
+    [symbol: string]: {
+      name: string;
+      sector: string;
+    };
+  }
+  
+  const stockMetadata: StockMetadataMap = availableStocks.reduce<StockMetadataMap>((acc, stock) => {
+    const symbol = stock.symbol.split(':')[1].replace('-EQ', '');
+    acc[symbol] = { name: stock.name, sector: stock.sector };
+    return acc;
+  }, {});
+  
+  // Transform quotes into stock data format
+  const stocks: StockDisplay[] = quotes && quotes.length > 0 
+    ? quotes.map((quote: StockQuote) => {
+        const symbol = quote.symbol.split(':')[1] || quote.symbol;
+        const metadata = stockMetadata[symbol] || { name: symbol, sector: "Other" };
+        
+        // Calculate change and percentage
+        const change = quote.ltp - quote.open;
+        const percentChange = (change / quote.open) * 100;
+        
+        return {
+          symbol,
+          name: metadata.name,
+          price: quote.ltp.toLocaleString(),
+          change: change >= 0 ? `+${change.toFixed(2)}` : change.toFixed(2),
+          percent: change >= 0 ? `+${percentChange.toFixed(2)}%` : `${percentChange.toFixed(2)}%`,
+          volume: `${(quote.volume / 1000).toFixed(1)}K`,
+          trend: change >= 0 ? "up" as const : "down" as const,
+          sector: metadata.sector,
+          dayHigh: quote.high,
+          dayLow: quote.low,
+          yearHigh: quote.high * 1.15, // Simulated 52W high
+          yearLow: quote.low * 0.85,  // Simulated 52W low
+        };
+      })
+    : []; // Empty array instead of hardcoded data to ensure we're using real-time data
 
-  const marketIndices = [
+  // Market indices data (could be fetched from API in future)
+  const marketIndices: MarketIndex[] = [
     { name: "NIFTY 50", value: "19,745.20", change: "+156.30", percent: "+0.80%" },
     { name: "SENSEX", value: "66,023.69", change: "+478.90", percent: "+0.73%" },
     { name: "BANK NIFTY", value: "43,892.15", change: "+201.45", percent: "+0.46%" },
   ];
+  
+  // Define interface for order parameters
+  interface OrderParams {
+    symbol: string;
+    qty: number;
+    type: number; // 1 for Market, 2 for Limit, etc.
+    side: number; // 1 for Buy, -1 for Sell
+    productType: string;
+    limitPrice?: number;
+    stopPrice?: number;
+    validity: string;
+    disclosedQty?: number;
+    offlineOrder?: boolean;
+  }
+  
+  // Handle buy order
+  const handleBuy = (symbol: string): void => {
+    if (!isAuthenticated) {
+      toast.error("Please log in to place orders");
+      return;
+    }
+    
+    setIsBuying(true);
+    
+    try {
+      const stock = stocks.find(s => s.symbol === symbol);
+      if (stock) {
+        const orderParams: OrderParams = {
+          symbol: symbol,
+          qty: 1,
+          type: 1, // Market order
+          side: 1, // Buy
+          productType: "CNC", // Cash and carry
+          limitPrice: 0,
+          stopPrice: 0,
+          validity: "DAY",
+          disclosedQty: 0,
+          offlineOrder: false,
+        };
+        
+        placeOrder(orderParams);
+        toast.success(`Buy order placed for ${symbol}`);
+      }
+    } catch (error) {
+      console.error('Error placing buy order:', error);
+      toast.error('Failed to place buy order');
+    } finally {
+      setIsBuying(false);
+    }
+  };
+  
+  // Handle sell order
+  const handleSell = (symbol: string): void => {
+    if (!isAuthenticated) {
+      toast.error("Please log in to place orders");
+      return;
+    }
+    
+    setIsSelling(true);
+    
+    try {
+    
+      const stock = stocks.find(s => s.symbol === symbol);
+      if (stock) {
+        const orderParams: OrderParams = {
+          symbol: symbol,
+          qty: 1,
+          type: 1, // Market order
+          side: -1, // Sell
+          productType: "CNC", // Cash and carry
+          limitPrice: 0,
+          stopPrice: 0,
+          validity: "DAY",
+          disclosedQty: 0,
+          offlineOrder: false,
+        };
+        
+        placeOrder(orderParams);
+        toast.success(`Sell order placed for ${symbol}`);
+      }
+    } catch (error) {
+      console.error('Error placing sell order:', error);
+      toast.error('Failed to place sell order');
+    } finally {
+      setIsSelling(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -31,8 +212,42 @@ export const MarketFeed = () => {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             Market Indices
-            <Button variant="ghost" size="sm">
-              <RefreshCw className="w-4 h-4" />
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={async () => {
+                if (!isAuthenticated) {
+                  toast.error("Please log in to refresh data");
+                  return;
+                }
+                
+                setIsRefreshing(true);
+                
+                try {
+                  const symbols = availableStocks.map((stock: StockMetadata) => 
+                    stock.symbol.split(':')[1].replace('-EQ', '')
+                  );
+                  
+                  if (symbols.length > 0) {
+                    await fetchQuotes(symbols);
+                    toast.success("Market data refreshed");
+                  } else {
+                    toast.error("No stock symbols available");
+                  }
+                } catch (error) {
+                  console.error('Error refreshing market data:', error);
+                  toast.error('Failed to refresh market data');
+                } finally {
+                  setIsRefreshing(false);
+                }
+              }}
+              disabled={isMarketDataLoading || isRefreshing}
+            >
+              {isMarketDataLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
             </Button>
           </CardTitle>
         </CardHeader>
@@ -69,7 +284,23 @@ export const MarketFeed = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {stocks.map((stock) => (
+            {isMarketDataLoading || isLoadingStocks ? (
+              // Loading skeletons
+              Array(5).fill(0).map((_, i) => (
+                <div key={i} className="p-4 rounded-lg border">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="h-5 w-24 mb-1 bg-muted animate-pulse rounded"></div>
+                      <div className="h-4 w-32 bg-muted animate-pulse rounded"></div>
+                    </div>
+                    <div className="text-right">
+                      <div className="h-5 w-16 mb-1 bg-muted animate-pulse rounded"></div>
+                      <div className="h-4 w-12 bg-muted animate-pulse rounded"></div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : stocks && stocks.length > 0 ? stocks.map((stock) => (
               <div 
                 key={stock.symbol} 
                 className={`p-4 rounded-lg border transition-all cursor-pointer hover:shadow-md ${
@@ -110,11 +341,27 @@ export const MarketFeed = () => {
                     <p className="text-sm text-muted-foreground">Volume</p>
                     <p className="text-sm font-medium">{stock.volume}</p>
                     <div className="flex gap-1 mt-2">
-                      <Button size="sm" variant="trading" className="text-xs px-2 py-1 h-auto">
-                        BUY
+                      <Button 
+                        size="sm" 
+                        variant="trading" 
+                        className="text-xs px-2 py-1 h-auto"
+                        onClick={() => handleBuy(stock.symbol)}
+                        disabled={isMarketDataLoading || !isAuthenticated}
+                      >
+                        {isMarketDataLoading ? (
+                          <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                        ) : "BUY"}
                       </Button>
-                      <Button size="sm" variant="outline" className="text-xs px-2 py-1 h-auto border-destructive text-destructive hover:bg-destructive/10">
-                        SELL
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="text-xs px-2 py-1 h-auto border-destructive text-destructive hover:bg-destructive/10"
+                        onClick={() => handleSell(stock.symbol)}
+                        disabled={isMarketDataLoading || !isAuthenticated}
+                      >
+                        {isMarketDataLoading ? (
+                          <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                        ) : "SELL"}
                       </Button>
                     </div>
                   </div>
@@ -125,25 +372,29 @@ export const MarketFeed = () => {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                       <div>
                         <p className="text-muted-foreground">Day High</p>
-                        <p className="font-medium">₹{(parseFloat(stock.price.replace(',', '')) + 50).toLocaleString()}</p>
+                        <p className="font-medium">₹{stock.dayHigh?.toLocaleString() || '—'}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Day Low</p>
-                        <p className="font-medium">₹{(parseFloat(stock.price.replace(',', '')) - 30).toLocaleString()}</p>
+                        <p className="font-medium">₹{stock.dayLow?.toLocaleString() || '—'}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">52W High</p>
-                        <p className="font-medium">₹{(parseFloat(stock.price.replace(',', '')) + 200).toLocaleString()}</p>
+                        <p className="font-medium">₹{stock.yearHigh?.toLocaleString() || '—'}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">52W Low</p>
-                        <p className="font-medium">₹{(parseFloat(stock.price.replace(',', '')) - 150).toLocaleString()}</p>
+                        <p className="font-medium">₹{stock.yearLow?.toLocaleString() || '—'}</p>
                       </div>
                     </div>
                   </div>
                 )}
               </div>
-            ))}
+            )) : (
+              <div className="p-4 rounded-lg border">
+                <p className="text-center text-muted-foreground">No stock data available</p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
