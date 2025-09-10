@@ -1,17 +1,28 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authAPI } from '../services/api';
+import { authAPI, AuthResponse, LoginCredentials } from '../services/api';
 import { toast } from 'sonner';
+
+interface User {
+  id: string;
+  email: string;
+  name: string;
+}
 
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: () => Promise<void>;
+  user: User | null;
+  login: (credentials: LoginCredentials) => Promise<void>;
   logout: () => void;
   checkAuthStatus: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Export the context for use in hooks
+export { AuthContext };
+
+// useAuth hook
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
@@ -20,6 +31,8 @@ export const useAuth = () => {
   return context;
 };
 
+// Hook moved to separate file to fix Fast Refresh warnings
+
 interface AuthProviderProps {
   children: ReactNode;
 }
@@ -27,6 +40,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [user, setUser] = useState<User | null>(null);
 
   // Define checkAuthStatus function before using it in useEffect
   const checkAuthStatus = async (): Promise<boolean> => {
@@ -42,13 +56,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Verify token with backend
       const response = await authAPI.verifyToken();
       
-      if (response.valid) {
+      if (response && response.valid) {
         setIsAuthenticated(true);
+        setUser(response.user || null);
         return true;
       } else {
         // Token is invalid, clear it
         localStorage.removeItem('fyers_token');
         setIsAuthenticated(false);
+        setUser(null);
         return false;
       }
     } catch (error) {
@@ -68,28 +84,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     checkAuth();
   }, []);
 
-  const login = async (): Promise<void> => {
+  const login = async (credentials: LoginCredentials): Promise<void> => {
     try {
       setIsLoading(true);
       
       // Start login process
-      const loginResponse = await authAPI.login();
+      const loginResponse = await authAPI.login(credentials);
       
-      if (!loginResponse.success) {
-        throw new Error(loginResponse.message || 'Login failed');
+      if (!loginResponse || !loginResponse.success) {
+        throw new Error(loginResponse?.message || 'Login failed');
       }
       
       // Get access token
       const tokenResponse = await authAPI.getToken();
       
-      if (!tokenResponse.success) {
-        throw new Error(tokenResponse.message || 'Failed to get access token');
+      if (!tokenResponse || !tokenResponse.success) {
+        throw new Error('Failed to get access token');
       }
       
       setIsAuthenticated(true);
       toast.success('Successfully logged in to Fyers');
-    } catch (error: any) {
-      toast.error(`Login failed: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Login failed';
+      toast.error(`Login failed: ${errorMessage}`);
       console.error('Login error:', error);
     } finally {
       setIsLoading(false);
@@ -99,12 +116,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = (): void => {
     authAPI.logout();
     setIsAuthenticated(false);
+    setUser(null);
     toast.info('Logged out successfully');
   };
 
   const value = {
     isAuthenticated,
     isLoading,
+    user,
     login,
     logout,
     checkAuthStatus,

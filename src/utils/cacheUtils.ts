@@ -24,7 +24,7 @@ const defaultConfig: CacheConfig = {
 /**
  * Cache class for storing and retrieving data with expiration
  */
-export class Cache<T = any> {
+export class Cache<T = unknown> {
   private cache: Map<string, CacheItem<T>>;
   private config: CacheConfig;
 
@@ -148,15 +148,15 @@ export class Cache<T = any> {
 }
 
 // Create and export default cache instances
-export const quotesCache = new Cache<any>({
+export const quotesCache = new Cache<unknown>({
   defaultTTL: 30 * 1000, // 30 seconds for quotes
 });
 
-export const historicalDataCache = new Cache<any>({
+export const historicalDataCache = new Cache<unknown>({
   defaultTTL: 5 * 60 * 1000, // 5 minutes for historical data
 });
 
-export const ordersCache = new Cache<any>({
+export const ordersCache = new Cache<unknown>({
   defaultTTL: 60 * 1000, // 1 minute for orders
 });
 
@@ -166,7 +166,7 @@ export const ordersCache = new Cache<any>({
  * @param params Parameters to include in the key
  * @returns Cache key string
  */
-export const createCacheKey = (prefix: string, params: Record<string, any> = {}): string => {
+export const createCacheKey = (prefix: string, params: Record<string, unknown> = {}): string => {
   const sortedParams = Object.entries(params)
     .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
     .map(([key, value]) => `${key}=${JSON.stringify(value)}`)

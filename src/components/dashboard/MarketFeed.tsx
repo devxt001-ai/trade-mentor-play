@@ -1,11 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, Search, Filter, RefreshCw, Loader2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Search, Filter, RefreshCw, Loader2, AlertCircle, DollarSign, Activity } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useMarketData } from "@/contexts/MarketDataContext";
-import { useTrading } from "@/contexts/TradingContext";
-import { useAuth } from "@/contexts/AuthContext";
+import { useMarketData } from "@/hooks/useMarketData";
+import { useTrading } from "@/hooks/useTrading";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { marketAPI, StockQuote, StockMetadata } from "@/services/api";
 
@@ -111,12 +111,62 @@ export const MarketFeed = () => {
       })
     : []; // Empty array instead of hardcoded data to ensure we're using real-time data
 
-  // Market indices data (could be fetched from API in future)
-  const marketIndices: MarketIndex[] = [
-    { name: "NIFTY 50", value: "19,745.20", change: "+156.30", percent: "+0.80%" },
-    { name: "SENSEX", value: "66,023.69", change: "+478.90", percent: "+0.73%" },
-    { name: "BANK NIFTY", value: "43,892.15", change: "+201.45", percent: "+0.46%" },
-  ];
+  // State for market indices
+  const [marketIndices, setMarketIndices] = useState<MarketIndex[]>([]);
+  const [isLoadingIndices, setIsLoadingIndices] = useState(true);
+  
+  // Fetch market indices data
+  useEffect(() => {
+    const fetchMarketIndices = async () => {
+      try {
+        setIsLoadingIndices(true);
+        // Fetch major indices data
+        const indicesSymbols = ['NSE:NIFTY50-INDEX', 'NSE:SENSEX-INDEX', 'NSE:BANKNIFTY-INDEX'];
+        const indicesResponse = await marketAPI.fetchQuotes(indicesSymbols);
+        
+        if (indicesResponse && indicesResponse.data && indicesResponse.data.length > 0) {
+          const formattedIndices = indicesResponse.data.map((index: StockQuote) => {
+            const change = index.ltp - index.open;
+            const percentChange = (change / index.open) * 100;
+            
+            let name = 'Unknown Index';
+            if (index.symbol.includes('NIFTY50')) name = 'NIFTY 50';
+            else if (index.symbol.includes('SENSEX')) name = 'SENSEX';
+            else if (index.symbol.includes('BANKNIFTY')) name = 'BANK NIFTY';
+            
+            return {
+              name,
+              value: index.ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+              change: change >= 0 ? `+${change.toFixed(2)}` : change.toFixed(2),
+              percent: change >= 0 ? `+${percentChange.toFixed(2)}%` : `${percentChange.toFixed(2)}%`
+            };
+          });
+          setMarketIndices(formattedIndices);
+        } else {
+          // Fallback to demo data if API fails
+          setMarketIndices([
+            { name: "NIFTY 50", value: "19,745.20", change: "+156.30", percent: "+0.80%" },
+            { name: "SENSEX", value: "66,023.69", change: "+478.90", percent: "+0.73%" },
+            { name: "BANK NIFTY", value: "43,892.15", change: "+201.45", percent: "+0.46%" },
+          ]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch market indices:', error);
+        // Fallback to demo data
+        setMarketIndices([
+          { name: "NIFTY 50", value: "19,745.20", change: "+156.30", percent: "+0.80%" },
+          { name: "SENSEX", value: "66,023.69", change: "+478.90", percent: "+0.73%" },
+          { name: "BANK NIFTY", value: "43,892.15", change: "+201.45", percent: "+0.46%" },
+        ]);
+      } finally {
+        setIsLoadingIndices(false);
+      }
+    };
+    
+    if (isAuthenticated) {
+      fetchMarketIndices();
+    }
+  }, [isAuthenticated]);
   
   // Define interface for order parameters
   interface OrderParams {
@@ -253,16 +303,40 @@ export const MarketFeed = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {marketIndices.map((index) => (
-              <div key={index.name} className="p-4 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
-                <h3 className="font-semibold text-foreground">{index.name}</h3>
-                <p className="text-2xl font-bold text-foreground mt-1">{index.value}</p>
-                <div className="flex items-center gap-1 mt-2">
-                  <TrendingUp className="w-4 h-4 text-success" />
-                  <span className="text-sm text-success font-medium">{index.change} ({index.percent})</span>
+            {isLoadingIndices ? (
+              // Loading skeleton for indices
+              Array(3).fill(0).map((_, i) => (
+                <div key={i} className="p-4 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
+                  <div className="h-5 w-24 bg-muted animate-pulse rounded mb-2"></div>
+                  <div className="h-8 w-32 bg-muted animate-pulse rounded mb-2"></div>
+                  <div className="h-4 w-20 bg-muted animate-pulse rounded"></div>
                 </div>
+              ))
+            ) : marketIndices.length > 0 ? marketIndices.map((index) => {
+              const isPositive = index.change.startsWith('+');
+              return (
+                <div key={index.name} className="p-4 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
+                  <h3 className="font-semibold text-foreground">{index.name}</h3>
+                  <p className="text-2xl font-bold text-foreground mt-1">{index.value}</p>
+                  <div className="flex items-center gap-1 mt-2">
+                    {isPositive ? (
+                      <TrendingUp className="w-4 h-4 text-success" />
+                    ) : (
+                      <TrendingDown className="w-4 h-4 text-destructive" />
+                    )}
+                    <span className={`text-sm font-medium ${
+                      isPositive ? 'text-success' : 'text-destructive'
+                    }`}>
+                      {index.change} ({index.percent})
+                    </span>
+                  </div>
+                </div>
+              );
+            }) : (
+              <div className="col-span-3 text-center py-4 text-muted-foreground">
+                <p>Market indices data unavailable</p>
               </div>
-            ))}
+            )}
           </div>
         </CardContent>
       </Card>

@@ -17,10 +17,11 @@ import {
   Bar
 } from "recharts";
 import { TrendingUp, TrendingDown, Activity, PieChart as PieChartIcon, BarChart3, Calendar, Loader2 } from "lucide-react";
-import { useMarketData } from "@/contexts/MarketDataContext";
-import { useTrading } from "@/contexts/TradingContext";
-import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useState, useCallback } from "react";
+import { useMarketData } from "@/hooks/useMarketData";
+import { useTrading } from "@/hooks/useTrading";
+import { useAuth } from "@/hooks/useAuth";
+import { usePortfolio } from "@/hooks/usePortfolio";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { StockQuote, HistoricalData, Order } from "@/services/api";
 
@@ -40,11 +41,7 @@ interface PerformanceData {
   previousValue?: number;
 }
 
-interface SectorAllocation {
-  sector: string;
-  value: number;
-  amount: number;
-}
+
 
 interface MonthlyReturn {
   month: string;
@@ -55,100 +52,28 @@ export const PortfolioAnalytics = () => {
   const { isAuthenticated } = useAuth();
   const { fetchQuotes: getQuotes, getHistoricalData, quotes, isLoading: isMarketDataLoading } = useMarketData();
   const { getOrders, orders, isLoading: isOrdersLoading } = useTrading();
+  const { portfolio, holdings, portfolioSummary, loading: isPortfolioLoading, refreshPortfolio } = usePortfolio();
   
   // State for portfolio data
   const [portfolioPerformance, setPortfolioPerformance] = useState<PerformanceData[]>([]);
-  const [sectorAllocation, setSectorAllocation] = useState<SectorAllocation[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  
+  const isLoading = isMarketDataLoading || isOrdersLoading || isPortfolioLoading || isInitialLoad;
 
   const [monthlyReturns, setMonthlyReturns] = useState<MonthlyReturn[]>([]);
 
   const [metrics, setMetrics] = useState<PortfolioMetric[]>([]);
   
-  // Initialize metrics with default values
-  useEffect(() => {
-    setMetrics([
-      { label: "Total Return", value: "+15.8%", change: "+2.3%", trend: "up" as const, color: "success" },
-      { label: "Sharpe Ratio", value: "1.34", change: "+0.12", trend: "up" as const, color: "primary" },
-      { label: "Max Drawdown", value: "-3.2%", change: "+0.8%", trend: "up" as const, color: "destructive" },
-      { label: "Win Rate", value: "73%", change: "+5%", trend: "up" as const, color: "success" },
-      { label: "Beta", value: "0.89", change: "-0.05", trend: "down" as const, color: "muted" },
-      { label: "Alpha", value: "2.1%", change: "+0.3%", trend: "up" as const, color: "premium" },
-    ]);
-    
-    // Initialize monthly returns with sample data
-    setMonthlyReturns([
-      { month: "Jan", returns: 2.3 },
-      { month: "Feb", returns: 1.8 },
-      { month: "Mar", returns: -0.7 },
-      { month: "Apr", returns: 3.2 },
-      { month: "May", returns: 2.1 },
-      { month: "Jun", returns: 1.5 }
-    ]);
-  }, []);
-
-  const COLORS = ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444'];
-  
-  // Fetch portfolio data when component mounts
-  useEffect(() => {
-    const fetchPortfolioData = async (): Promise<void> => {
-      if (!isAuthenticated) return;
-      
-      try {
-        setIsInitialLoad(true);
-        
-        // Get stock symbols from orders
-        await getOrders();
-        
-        // Extract unique symbols from orders
-        if (orders && orders.length > 0) {
-          const symbols: string[] = [...new Set(orders.map((order: Order) => order.symbol))];
-          
-          if (symbols.length > 0) {
-            await Promise.all([
-              getQuotes(symbols),
-              fetchHistoricalData()
-            ]);
-            
-            // Generate portfolio performance data
-            updatePortfolioMetrics();
-          } else {
-            // Fallback to default symbols if no orders found
-            getQuotes(['INFY', 'HDFCBANK', 'RELIANCE', 'TCS', 'SUNPHARMA']);
-            fetchHistoricalData();
-          }
-        } else {
-          // Fallback to default symbols if no orders found
-          getQuotes(['INFY', 'HDFCBANK', 'RELIANCE', 'TCS', 'SUNPHARMA']);
-          fetchHistoricalData();
-        }
-      } catch (error) {
-        console.error('Failed to fetch portfolio data:', error);
-        toast.error('Failed to load portfolio data');
-      } finally {
-        setIsInitialLoad(false);
-      }
-    };
-    
-    fetchPortfolioData();
-  }, [isAuthenticated]);
-  
-  // Update metrics when quotes or orders change
-  useEffect(() => {
-    if (quotes && quotes.length > 0 && orders) {
-      updatePortfolioMetrics();
-    }
-  }, [quotes, orders]);
-  
-  const fetchHistoricalData = async (): Promise<void> => {
+  // Define functions before their usage
+  const fetchHistoricalData = useCallback(async (): Promise<void> => {
     try {
       // Get historical data for the main portfolio stocks
       const historicalData: HistoricalData = await getHistoricalData('INFY', '1m', 'day');
       
       if (historicalData && historicalData.candles) {
         // Transform historical data for the performance chart
-        const transformedData: PerformanceData[] = historicalData.candles.slice(-9).map((candle: any[], index: number) => {
+        const transformedData: PerformanceData[] = historicalData.candles.slice(-9).map((candle: [number, number, number, number, number], index: number) => {
           const date = new Date(candle[0]);
           const month = date.toLocaleString('default', { month: 'short' });
           return {
@@ -164,89 +89,169 @@ export const PortfolioAnalytics = () => {
       toast.error('Failed to fetch historical data');
       console.error('Error fetching historical data:', error);
     }
-  };
+  }, [getHistoricalData]);
   
   const updatePortfolioMetrics = useCallback((): void => {
     if (!quotes || quotes.length === 0) return;
     
-    // Calculate sector allocation based on quotes
-    interface SectorData {
-      value: number;
-      amount: number;
-    }
-    
-    interface SectorMap {
-      [key: string]: SectorData;
-    }
-    
-    const sectors: SectorMap = {
-      IT: { value: 0, amount: 0 },
-      Banking: { value: 0, amount: 0 },
-      Healthcare: { value: 0, amount: 0 },
-      Energy: { value: 0, amount: 0 },
-      Auto: { value: 0, amount: 0 }
-    };
-    
-    // Map stocks to sectors
-    const stockSectors: Record<string, string> = {
-      'INFY': 'IT',
-      'TCS': 'IT',
-      'HDFCBANK': 'Banking',
-      'SUNPHARMA': 'Healthcare',
-      'RELIANCE': 'Energy'
-    };
-    
-    // Calculate total portfolio value
-    let totalValue = 0;
-    quotes.forEach((quote: StockQuote) => {
-      const symbol = quote.symbol.split(':')[1] || quote.symbol;
-      const sector = stockSectors[symbol] || 'Other';
-      const quantity: number = symbol === 'INFY' ? 100 : symbol === 'HDFCBANK' ? 50 : 25;
-      const value: number = quote.ltp * quantity;
-      
-      if (sectors[sector]) {
-        sectors[sector].amount += value;
-      }
-      
-      totalValue += value;
-    });
-    
-    // Calculate percentages
-    Object.keys(sectors).forEach(sector => {
-      if (totalValue > 0) {
-        sectors[sector].value = Math.round((sectors[sector].amount / totalValue) * 100);
-      }
-    });
-    
-    // Transform to array format for chart
-    const newSectorAllocation: SectorAllocation[] = Object.keys(sectors).map((sector: string) => ({
-      sector,
-      value: sectors[sector].value,
-      amount: sectors[sector].amount
-    }));
-    
-    setSectorAllocation(newSectorAllocation);
+    // Portfolio metrics are now handled by the PortfolioContext
+    // This function can be used for additional calculations if needed
     
     // Update metrics based on real data
     const newMetrics: PortfolioMetric[] = [...metrics];
-    if (quotes.length > 0) {
-      // Calculate total return based on quotes
-      const totalReturn: string = ((totalValue - 1000000) / 1000000 * 100).toFixed(1);
+    if (quotes.length > 0 && portfolioSummary) {
+      // Calculate total return based on portfolio summary
+      const totalReturn: string = ((portfolioSummary.totalValue - 1000000) / 1000000 * 100).toFixed(1);
       newMetrics[0].value = `+${totalReturn}%`;
       
       // Update win rate based on orders
-        if (orders && orders.length > 0) {
-          const successfulOrders: number = orders.filter((order: Order) => 
-            order.status === 'COMPLETE' && order.tradedPrice !== undefined && order.limitPrice !== undefined && order.tradedPrice > order.limitPrice
-          ).length;
-          const winRate: number = Math.round((successfulOrders / orders.length) * 100);
+      if (orders && orders.length > 0) {
+        const successfulOrders: number = orders.filter((order: Order) => 
+          order.status === 'COMPLETE' && order.tradedPrice !== undefined && order.limitPrice !== undefined && order.tradedPrice > order.limitPrice
+        ).length;
+        const winRate: number = Math.round((successfulOrders / orders.length) * 100);
+        if (newMetrics[3]) {
           newMetrics[3].value = `${winRate}%`;
         }
+      }
     }
     
     setMetrics(newMetrics);
-  }, [quotes, orders, metrics]);
+  }, [quotes, orders, metrics, portfolioSummary]);
+  
+  // Update metrics when portfolio data changes
+  useEffect(() => {
+    if (portfolioSummary) {
+      const totalReturnPercent = portfolioSummary.totalPnLPercent;
+      const dayChangePercent = portfolio?.day_change_percent || 0;
+      
+      setMetrics([
+        { 
+          label: "Total Return", 
+          value: `${totalReturnPercent >= 0 ? '+' : ''}${totalReturnPercent.toFixed(2)}%`, 
+          change: `${dayChangePercent >= 0 ? '+' : ''}${dayChangePercent.toFixed(2)}%`, 
+          trend: totalReturnPercent >= 0 ? "up" as const : "down" as const, 
+          color: totalReturnPercent >= 0 ? "success" : "destructive" 
+        },
+        { 
+          label: "Portfolio Value", 
+          value: `₹${portfolioSummary.totalValue.toLocaleString()}`, 
+          change: `₹${portfolioSummary.totalPnL.toLocaleString()}`, 
+          trend: portfolioSummary.totalPnL >= 0 ? "up" as const : "down" as const, 
+          color: "primary" 
+        },
+        { 
+          label: "Available Cash", 
+          value: `₹${portfolioSummary.availableCash.toLocaleString()}`, 
+          change: "--", 
+          trend: "up" as const, 
+          color: "success" 
+        },
+        {
+        label: "Holdings Count",
+        value: `${portfolioSummary?.holdings?.length || 0}`, 
+          change: "--", 
+          trend: "up" as const, 
+          color: "muted" 
+        },
+        { 
+          label: "Day Change", 
+          value: `₹${(portfolio?.day_change || 0).toLocaleString()}`, 
+          change: `${dayChangePercent >= 0 ? '+' : ''}${dayChangePercent.toFixed(2)}%`, 
+          trend: dayChangePercent >= 0 ? "up" as const : "down" as const, 
+          color: dayChangePercent >= 0 ? "success" : "destructive" 
+        },
+        { 
+          label: "Total Invested", 
+          value: `₹${(portfolio?.total_invested || 0).toLocaleString()}`, 
+          change: "--", 
+          trend: "up" as const, 
+          color: "premium" 
+        },
+      ]);
+    } else {
+      // Fallback to default metrics when no portfolio data
+      setMetrics([
+        { label: "Total Return", value: "--", change: "--", trend: "up" as const, color: "success" },
+        { label: "Portfolio Value", value: "--", change: "--", trend: "up" as const, color: "primary" },
+        { label: "Available Cash", value: "--", change: "--", trend: "up" as const, color: "success" },
+        { label: "Holdings Count", value: "--", change: "--", trend: "up" as const, color: "muted" },
+        { label: "Day Change", value: "--", change: "--", trend: "up" as const, color: "success" },
+        { label: "Total Invested", value: "--", change: "--", trend: "up" as const, color: "premium" },
+      ]);
+    }
 
+    // Initialize monthly returns with sample data (can be enhanced with real historical data)
+    setMonthlyReturns([
+      { month: "Jan", returns: 2.3 },
+      { month: "Feb", returns: 1.8 },
+      { month: "Mar", returns: -0.7 },
+      { month: "Apr", returns: 3.2 },
+      { month: "May", returns: 2.1 },
+      { month: "Jun", returns: 1.5 }
+    ]);
+  }, [portfolioSummary, portfolio]);
+
+  const COLORS = useMemo(() => ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444'], []);
+  
+  // Get portfolio symbols for market data
+  const portfolioSymbols = useMemo(() => {
+    if (holdings && holdings.length > 0) {
+      return holdings.map(holding => holding.stock?.symbol || 'UNKNOWN');
+    }
+    // Fallback symbols when no holdings
+    return ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK'];
+  }, [holdings]);
+
+  // Generate portfolio allocation data
+  const portfolioAllocation = useMemo(() => {
+    if (!portfolioSummary || !portfolioSummary.holdings || portfolioSummary.holdings.length === 0) {
+      return [];
+    }
+
+    const totalValue = portfolioSummary.totalValue;
+    
+    return portfolioSummary.holdings.map((holding, index) => ({
+      name: holding.stock?.symbol || 'UNKNOWN',
+      value: Math.round((holding.market_value / totalValue) * 100),
+      color: COLORS[index % COLORS.length],
+      amount: holding.market_value
+    })).sort((a, b) => b.value - a.value); // Sort by allocation percentage
+  }, [portfolioSummary, COLORS]);
+
+  // Fetch portfolio data when component mounts
+  useEffect(() => {
+    const fetchPortfolioData = async (): Promise<void> => {
+      if (!isAuthenticated) return;
+      
+      try {
+        setIsInitialLoad(true);
+        
+        // Get stock symbols from portfolio holdings
+        await Promise.all([
+          getQuotes(portfolioSymbols),
+          fetchHistoricalData()
+        ]);
+        
+        // Generate portfolio performance data
+        updatePortfolioMetrics();
+      } catch (error) {
+        console.error('Failed to fetch portfolio data:', error);
+        toast.error('Failed to load portfolio data');
+      } finally {
+        setIsInitialLoad(false);
+      }
+    };
+    
+    fetchPortfolioData();
+  }, [isAuthenticated, portfolioSymbols, getQuotes, updatePortfolioMetrics, fetchHistoricalData]);
+  
+  // Update metrics when quotes or orders change
+  useEffect(() => {
+    if (quotes && quotes.length > 0 && orders) {
+      updatePortfolioMetrics();
+    }
+  }, [quotes, orders, updatePortfolioMetrics]);
 
   // Refresh portfolio data
   const handleRefresh = async (): Promise<void> => {
@@ -271,17 +276,20 @@ export const PortfolioAnalytics = () => {
         if (symbols.length > 0) {
           await Promise.all([
             getQuotes(symbols),
-            fetchHistoricalData()
+            fetchHistoricalData(),
+            refreshPortfolio()
           ]);
         } else {
           // Fallback to default symbols if no orders found
           await getQuotes(['INFY', 'HDFCBANK', 'RELIANCE', 'TCS', 'SUNPHARMA']);
           await fetchHistoricalData();
+          await refreshPortfolio();
         }
       } else {
         // Fallback to default symbols if no orders found
         await getQuotes(['INFY', 'HDFCBANK', 'RELIANCE', 'TCS', 'SUNPHARMA']);
         await fetchHistoricalData();
+        await refreshPortfolio();
       }
       
       // Update portfolio metrics
@@ -413,15 +421,15 @@ export const PortfolioAnalytics = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={sectorAllocation}
+                        data={portfolioAllocation}
                         cx="50%"
                         cy="50%"
                         outerRadius={80}
                         fill="#8884d8"
                         dataKey="value"
-                        label={({sector, value}: {sector: string, value: number}) => `${sector}: ${value}%`}
+                        label={(entry: {name: string, value: number}) => `${entry.name}: ${entry.value}%`}
                       >
-                        {sectorAllocation.map((entry: SectorAllocation, index: number) => (
+                        {portfolioAllocation.map((entry, index: number) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
@@ -437,18 +445,18 @@ export const PortfolioAnalytics = () => {
                 <CardTitle>Sector Breakdown</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {sectorAllocation.map((sector: SectorAllocation, index: number) => (
-                  <div key={sector.sector} className="flex items-center justify-between">
+                {portfolioAllocation.map((holding, index: number) => (
+                  <div key={holding.name} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div 
                         className="w-4 h-4 rounded"
                         style={{ backgroundColor: COLORS[index % COLORS.length] }}
                       />
-                      <span className="font-medium">{sector.sector}</span>
+                      <span className="font-medium">{holding.name}</span>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold">₹{sector.amount.toLocaleString()}</p>
-                      <p className="text-sm text-muted-foreground">{sector.value}%</p>
+                      <p className="font-semibold">₹{holding.amount.toLocaleString()}</p>
+                      <p className="text-sm text-muted-foreground">{holding.value}%</p>
                     </div>
                   </div>
                 ))}

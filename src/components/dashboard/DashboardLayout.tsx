@@ -1,9 +1,110 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, Trophy, Bell, User, Settings } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  BarChart3,
+  Trophy,
+  Bell,
+  User,
+  Settings,
+  Loader2,
+} from "lucide-react";
+import { useMarketData } from "@/hooks/useMarketData";
+import type { StockQuote } from "@/contexts/MarketDataContext";
+import { useTrading } from "@/hooks/useTrading";
+import { useAuth } from "@/hooks/useAuth";
+import { useEffect, useState } from "react";
 
 export const DashboardLayout = () => {
+  const { quotes, isLoading: isMarketLoading, fetchQuotes } = useMarketData();
+  const { orders, getOrders, isLoading: isTradingLoading } = useTrading();
+  const { isAuthenticated } = useAuth();
+  const [portfolioData, setPortfolioData] = useState({
+    totalValue: 0,
+    totalPnL: 0,
+    totalPnLPercent: 0,
+    availableCash: 245000,
+  });
+
+  // Fetch market data and orders on component mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      const symbols = [
+        "NSE:RELIANCE-EQ",
+        "NSE:TCS-EQ",
+        "NSE:INFY-EQ",
+        "NSE:HDFCBANK-EQ",
+        "NSE:ICICIBANK-EQ",
+      ];
+      fetchQuotes(symbols);
+      getOrders();
+    }
+  }, [isAuthenticated, fetchQuotes, getOrders]);
+
+  // Calculate portfolio metrics from real data
+  useEffect(() => {
+    if (quotes.length > 0 && orders.length > 0) {
+      // Calculate portfolio value from completed orders
+      const completedOrders = orders.filter(
+        (order) => order.status === "COMPLETE"
+      );
+      let totalValue = 0;
+      let totalPnL = 0;
+
+      completedOrders.forEach((order) => {
+        const currentQuote = quotes.find((q) => q.symbol === order.symbol);
+        if (currentQuote && order.qty) {
+          const currentValue = currentQuote.ltp * order.qty;
+          const investedValue =
+            (order.tradedPrice || order.price || 0) * order.qty;
+          totalValue += currentValue;
+          totalPnL += currentValue - investedValue;
+        }
+      });
+
+      const totalPnLPercent =
+        totalValue > 0 ? (totalPnL / (totalValue - totalPnL)) * 100 : 0;
+
+      setPortfolioData({
+        totalValue,
+        totalPnL,
+        totalPnLPercent,
+        availableCash: 245000 - (totalValue - totalPnL),
+      });
+    }
+  }, [quotes, orders]);
+
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  // Format stock data for display
+  const formatStockData = (quotes: StockQuote[]) => {
+    return quotes.slice(0, 5).map((quote) => ({
+      symbol: quote.symbol?.replace("NSE:", "").replace("-EQ", "") || "Unknown",
+      price: formatCurrency(quote.ltp || quote.lastPrice || 0),
+      change:
+        (quote.change || 0) > 0
+          ? `+${(quote.change || 0).toFixed(2)}`
+          : (quote.change || 0).toFixed(2),
+      percent:
+        (quote.changePercent || 0) > 0
+          ? `+${(quote.changePercent || 0).toFixed(2)}%`
+          : `${(quote.changePercent || 0).toFixed(2)}%`,
+      trend: (quote.change || 0) >= 0 ? ("up" as const) : ("down" as const),
+    }));
+  };
+
+  const stockData = formatStockData(quotes);
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
@@ -14,13 +115,17 @@ export const DashboardLayout = () => {
               <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
                 <TrendingUp className="w-5 h-5 text-primary-foreground" />
               </div>
-              <h1 className="text-xl font-bold text-foreground">TradeSim Pro</h1>
+              <h1 className="text-xl font-bold text-foreground">
+                TradeSim Pro
+              </h1>
             </div>
-            
+
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 bg-success/10 px-3 py-1 rounded-full">
                 <DollarSign className="w-4 h-4 text-success" />
-                <span className="text-sm font-medium text-success">₹9,84,750</span>
+                <span className="text-sm font-medium text-success">
+                  ₹9,84,750
+                </span>
               </div>
               <Button variant="ghost" size="sm">
                 <Bell className="w-4 h-4" />
@@ -49,13 +154,17 @@ export const DashboardLayout = () => {
               <CardContent className="space-y-4">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Value</p>
-                  <p className="text-2xl font-bold text-foreground">₹9,84,750</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    ₹9,84,750
+                  </p>
                   <div className="flex items-center gap-1 mt-1">
                     <TrendingUp className="w-4 h-4 text-success" />
-                    <span className="text-sm text-success">+₹15,250 (1.58%)</span>
+                    <span className="text-sm text-success">
+                      +₹15,250 (1.58%)
+                    </span>
                   </div>
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-muted-foreground">Cash</p>
@@ -68,10 +177,14 @@ export const DashboardLayout = () => {
                 </div>
 
                 <div className="pt-2">
-                  <p className="text-xs text-muted-foreground mb-2">Day's P&L</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Day's P&L
+                  </p>
                   <div className="flex items-center justify-between">
                     <span className="text-success font-medium">+₹3,420</span>
-                    <Badge variant="secondary" className="text-success">+0.35%</Badge>
+                    <Badge variant="secondary" className="text-success">
+                      +0.35%
+                    </Badge>
                   </div>
                 </div>
               </CardContent>
@@ -83,9 +196,15 @@ export const DashboardLayout = () => {
                 <CardTitle>Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button variant="trading" className="w-full">Buy Stocks</Button>
-                <Button variant="outline" className="w-full">Sell Holdings</Button>
-                <Button variant="ghost" className="w-full">View Orders</Button>
+                <Button variant="trading" className="w-full">
+                  Buy Stocks
+                </Button>
+                <Button variant="outline" className="w-full">
+                  Sell Holdings
+                </Button>
+                <Button variant="ghost" className="w-full">
+                  View Orders
+                </Button>
               </CardContent>
             </Card>
 
@@ -100,21 +219,27 @@ export const DashboardLayout = () => {
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Badge className="w-6 h-6 rounded-full p-0 flex items-center justify-center bg-premium">1</Badge>
+                    <Badge className="w-6 h-6 rounded-full p-0 flex items-center justify-center bg-premium">
+                      1
+                    </Badge>
                     <span className="text-sm font-medium">TradeMaster</span>
                   </div>
                   <span className="text-sm text-success">+24.5%</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Badge className="w-6 h-6 rounded-full p-0 flex items-center justify-center bg-muted">2</Badge>
+                    <Badge className="w-6 h-6 rounded-full p-0 flex items-center justify-center bg-muted">
+                      2
+                    </Badge>
                     <span className="text-sm font-medium">StockGuru</span>
                   </div>
                   <span className="text-sm text-success">+18.2%</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Badge className="w-6 h-6 rounded-full p-0 flex items-center justify-center bg-muted">3</Badge>
+                    <Badge className="w-6 h-6 rounded-full p-0 flex items-center justify-center bg-muted">
+                      3
+                    </Badge>
                     <span className="text-sm font-medium">You</span>
                   </div>
                   <span className="text-sm text-success">+15.8%</span>
@@ -137,27 +262,72 @@ export const DashboardLayout = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {[
-                      { symbol: "RELIANCE", price: "2,847.50", change: "+24.75", percent: "+0.88%", trend: "up" },
-                      { symbol: "TCS", price: "3,456.20", change: "-12.30", percent: "-0.35%", trend: "down" },
-                      { symbol: "INFY", price: "1,789.40", change: "+45.60", percent: "+2.62%", trend: "up" },
-                      { symbol: "HDFCBANK", price: "1,634.80", change: "-8.90", percent: "-0.54%", trend: "down" },
-                      { symbol: "ICICIBANK", price: "945.30", change: "+18.70", percent: "+2.02%", trend: "up" }
-                    ].map((stock) => (
-                      <div key={stock.symbol} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer">
-                        <div>
-                          <p className="font-medium">{stock.symbol}</p>
-                          <p className="text-sm text-muted-foreground">₹{stock.price}</p>
-                        </div>
-                        <div className="text-right">
-                          <div className={`flex items-center gap-1 ${stock.trend === 'up' ? 'text-success' : 'text-destructive'}`}>
-                            {stock.trend === 'up' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                            <span className="text-sm font-medium">{stock.change}</span>
+                    {isMarketLoading ? (
+                      // Loading skeleton
+                      Array(5)
+                        .fill(0)
+                        .map((_, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between p-3 rounded-lg border border-border"
+                          >
+                            <div className="flex-1">
+                              <div className="h-4 w-20 bg-muted animate-pulse rounded mb-1"></div>
+                              <div className="h-3 w-16 bg-muted animate-pulse rounded"></div>
+                            </div>
+                            <div className="text-right">
+                              <div className="h-4 w-12 bg-muted animate-pulse rounded mb-1"></div>
+                              <div className="h-3 w-10 bg-muted animate-pulse rounded"></div>
+                            </div>
                           </div>
-                          <p className={`text-xs ${stock.trend === 'up' ? 'text-success' : 'text-destructive'}`}>{stock.percent}</p>
+                        ))
+                    ) : stockData.length > 0 ? (
+                      stockData.map((stock) => (
+                        <div
+                          key={stock.symbol}
+                          className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors cursor-pointer"
+                        >
+                          <div>
+                            <p className="font-medium">{stock.symbol}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {stock.price}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <div
+                              className={`flex items-center gap-1 ${
+                                stock.trend === "up"
+                                  ? "text-success"
+                                  : "text-destructive"
+                              }`}
+                            >
+                              {stock.trend === "up" ? (
+                                <TrendingUp className="w-3 h-3" />
+                              ) : (
+                                <TrendingDown className="w-3 h-3" />
+                              )}
+                              <span className="text-sm font-medium">
+                                {stock.change}
+                              </span>
+                            </div>
+                            <p
+                              className={`text-xs ${
+                                stock.trend === "up"
+                                  ? "text-success"
+                                  : "text-destructive"
+                              }`}
+                            >
+                              {stock.percent}
+                            </p>
+                          </div>
                         </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-4 text-muted-foreground">
+                        <p>No market data available</p>
+                        <p className="text-sm">Please check your connection</p>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -169,18 +339,30 @@ export const DashboardLayout = () => {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-2">
-                    <Button variant="trading" className="bg-success hover:bg-success/90">BUY</Button>
-                    <Button variant="outline" className="border-destructive text-destructive hover:bg-destructive/10">SELL</Button>
+                    <Button
+                      variant="trading"
+                      className="bg-success hover:bg-success/90"
+                    >
+                      BUY
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="border-destructive text-destructive hover:bg-destructive/10"
+                    >
+                      SELL
+                    </Button>
                   </div>
-                  
+
                   <div className="space-y-3">
                     <div>
-                      <label className="text-sm font-medium">Stock Symbol</label>
+                      <label className="text-sm font-medium">
+                        Stock Symbol
+                      </label>
                       <div className="mt-1 p-2 border border-border rounded-md bg-muted/50">
                         <span className="text-sm">RELIANCE</span>
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="text-sm font-medium">Quantity</label>
@@ -195,19 +377,38 @@ export const DashboardLayout = () => {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="pt-2 border-t border-border">
                       <div className="flex justify-between text-sm">
-                        <span>Order Value:</span>
-                        <span className="font-medium">₹2,84,750</span>
+                        <span>Portfolio Value:</span>
+                        <span className="font-medium">
+                          {formatCurrency(portfolioData.totalValue)}
+                        </span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span>Available Cash:</span>
-                        <span className="text-success">₹2,45,000</span>
+                        <span className="text-success">
+                          {formatCurrency(portfolioData.availableCash)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span>Total P&L:</span>
+                        <span
+                          className={
+                            portfolioData.totalPnL >= 0
+                              ? "text-success"
+                              : "text-destructive"
+                          }
+                        >
+                          {portfolioData.totalPnL >= 0 ? "+" : ""}
+                          {formatCurrency(portfolioData.totalPnL)}
+                        </span>
                       </div>
                     </div>
-                    
-                    <Button className="w-full" disabled>Insufficient Funds</Button>
+
+                    <Button className="w-full" disabled>
+                      Insufficient Funds
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -222,24 +423,92 @@ export const DashboardLayout = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {[
-                      { symbol: "TCS", qty: 50, avgPrice: "3,200.00", current: "3,456.20", pnl: "+₹12,810", percent: "+8.0%" },
-                      { symbol: "INFY", qty: 75, avgPrice: "1,650.00", current: "1,789.40", pnl: "+₹10,455", percent: "+8.4%" },
-                      { symbol: "HDFCBANK", qty: 40, avgPrice: "1,680.00", current: "1,634.80", pnl: "-₹1,808", percent: "-2.7%" }
-                    ].map((holding) => (
-                      <div key={holding.symbol} className="flex items-center justify-between p-3 rounded-lg border border-border">
-                        <div>
-                          <p className="font-medium">{holding.symbol}</p>
-                          <p className="text-xs text-muted-foreground">{holding.qty} @ ₹{holding.avgPrice}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium">₹{holding.current}</p>
-                          <p className={`text-xs ${holding.pnl.startsWith('+') ? 'text-success' : 'text-destructive'}`}>
-                            {holding.pnl} ({holding.percent})
-                          </p>
-                        </div>
+                    {isTradingLoading ? (
+                      // Loading skeleton for holdings
+                      Array(3)
+                        .fill(0)
+                        .map((_, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between p-3 rounded-lg border border-border"
+                          >
+                            <div className="flex-1">
+                              <div className="h-4 w-16 bg-muted animate-pulse rounded mb-1"></div>
+                              <div className="h-3 w-24 bg-muted animate-pulse rounded"></div>
+                            </div>
+                            <div className="text-right">
+                              <div className="h-4 w-16 bg-muted animate-pulse rounded mb-1"></div>
+                              <div className="h-3 w-20 bg-muted animate-pulse rounded"></div>
+                            </div>
+                          </div>
+                        ))
+                    ) : orders.filter(
+                        (order) =>
+                          order.status === "COMPLETE" && order.type === "BUY"
+                      ).length > 0 ? (
+                      orders
+                        .filter(
+                          (order) =>
+                            order.status === "COMPLETE" && order.type === "BUY"
+                        )
+                        .slice(0, 3)
+                        .map((holding) => {
+                          const currentQuote = quotes.find(
+                            (q) => q.symbol === holding.symbol
+                          );
+                          const currentPrice = currentQuote?.ltp || 0;
+                          const avgPrice =
+                            holding.tradedPrice || holding.price || 0;
+                          const qty = holding.qty || holding.quantity || 0;
+                          const currentValue = currentPrice * qty;
+                          const investedValue = avgPrice * qty;
+                          const pnl = currentValue - investedValue;
+                          const pnlPercent =
+                            investedValue > 0 ? (pnl / investedValue) * 100 : 0;
+
+                          return (
+                            <div
+                              key={holding.symbol || holding.orderId}
+                              className="flex items-center justify-between p-3 rounded-lg border border-border"
+                            >
+                              <div>
+                                <p className="font-medium">
+                                  {holding.symbol
+                                    ?.replace("NSE:", "")
+                                    .replace("-EQ", "") || "Unknown"}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {qty} @ {formatCurrency(avgPrice)}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-medium">
+                                  {formatCurrency(currentPrice)}
+                                </p>
+                                <p
+                                  className={`text-xs ${
+                                    pnl >= 0
+                                      ? "text-success"
+                                      : "text-destructive"
+                                  }`}
+                                >
+                                  {pnl >= 0 ? "+" : ""}
+                                  {formatCurrency(pnl)} (
+                                  {pnlPercent >= 0 ? "+" : ""}
+                                  {pnlPercent.toFixed(1)}%)
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })
+                    ) : (
+                      <div className="text-center py-4 text-muted-foreground">
+                        <p>No holdings found</p>
+                        <p className="text-sm">
+                          Start trading to see your portfolio
+                        </p>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -251,36 +520,87 @@ export const DashboardLayout = () => {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="text-center p-3 bg-success/10 rounded-lg">
-                      <p className="text-2xl font-bold text-success">73%</p>
-                      <p className="text-xs text-muted-foreground">Win Rate</p>
+                    <div
+                      className={`text-center p-3 rounded-lg ${
+                        portfolioData.totalPnLPercent >= 0
+                          ? "bg-success/10 border border-success/20"
+                          : "bg-destructive/10 border border-destructive/20"
+                      }`}
+                    >
+                      <p
+                        className={`text-2xl font-bold ${
+                          portfolioData.totalPnLPercent >= 0
+                            ? "text-success"
+                            : "text-destructive"
+                        }`}
+                      >
+                        {portfolioData.totalPnLPercent >= 0 ? "+" : ""}
+                        {portfolioData.totalPnLPercent.toFixed(1)}%
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Total Return
+                      </p>
                     </div>
-                    <div className="text-center p-3 bg-primary/10 rounded-lg">
-                      <p className="text-2xl font-bold text-primary">₹8,420</p>
-                      <p className="text-xs text-muted-foreground">Avg Profit</p>
+                    <div
+                      className={`text-center p-3 rounded-lg ${
+                        portfolioData.totalPnL >= 0
+                          ? "bg-success/10 border border-success/20"
+                          : "bg-destructive/10 border border-destructive/20"
+                      }`}
+                    >
+                      <p
+                        className={`text-2xl font-bold ${
+                          portfolioData.totalPnL >= 0
+                            ? "text-success"
+                            : "text-destructive"
+                        }`}
+                      >
+                        {portfolioData.totalPnL >= 0 ? "+" : ""}
+                        {formatCurrency(portfolioData.totalPnL)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Total P&L</p>
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Total Trades:</span>
-                      <span className="font-medium">47</span>
+                      <span className="font-medium">
+                        {
+                          orders.filter((order) => order.status === "COMPLETE")
+                            .length
+                        }
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span>Best Trade:</span>
-                      <span className="font-medium text-success">+₹24,500</span>
+                      <span>Portfolio Value:</span>
+                      <span className="font-medium">
+                        {formatCurrency(portfolioData.totalValue)}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span>Worst Trade:</span>
-                      <span className="font-medium text-destructive">-₹8,200</span>
+                      <span>Available Cash:</span>
+                      <span className="font-medium text-success">
+                        {formatCurrency(portfolioData.availableCash)}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span>Sharpe Ratio:</span>
-                      <span className="font-medium">1.34</span>
+                      <span>Active Positions:</span>
+                      <span className="font-medium">
+                        {
+                          orders.filter(
+                            (order) =>
+                              order.status === "COMPLETE" &&
+                              order.type === "BUY"
+                          ).length
+                        }
+                      </span>
                     </div>
                   </div>
-                  
-                  <Button variant="ghost" className="w-full">View Detailed Analytics</Button>
+
+                  <Button variant="ghost" className="w-full">
+                    View Detailed Analytics
+                  </Button>
                 </CardContent>
               </Card>
             </div>

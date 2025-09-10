@@ -13,8 +13,23 @@ export enum ErrorType {
 export interface ErrorResponse {
   type: ErrorType;
   message: string;
-  details?: any;
+  details?: unknown;
   status?: number;
+}
+
+// Type guard to check if error is an Axios error
+interface AxiosError {
+  response?: {
+    status: number;
+    data?: unknown;
+  };
+  request?: unknown;
+  message?: string;
+}
+
+function isAxiosError(error: unknown): error is AxiosError {
+  return typeof error === 'object' && error !== null && 
+    ('response' in error || 'request' in error || 'message' in error);
 }
 
 /**
@@ -23,7 +38,7 @@ export interface ErrorResponse {
  * @param fallbackMessage Optional fallback message if error doesn't have a message
  * @returns Structured error response
  */
-export const handleApiError = (error: any, fallbackMessage = 'An unexpected error occurred'): ErrorResponse => {
+export const handleApiError = (error: unknown, fallbackMessage = 'An unexpected error occurred'): ErrorResponse => {
   console.error('API Error:', error);
   
   // Default error response
@@ -33,7 +48,7 @@ export const handleApiError = (error: any, fallbackMessage = 'An unexpected erro
   };
 
   // Handle Axios errors
-  if (error.response) {
+  if (isAxiosError(error) && error.response) {
     // Server responded with an error status
     errorResponse.status = error.response.status;
     errorResponse.details = error.response.data;
@@ -48,7 +63,9 @@ export const handleApiError = (error: any, fallbackMessage = 'An unexpected erro
       case 400:
       case 422:
         errorResponse.type = ErrorType.VALIDATION;
-        errorResponse.message = error.response.data?.message || 'Invalid request data';
+        errorResponse.message = (error.response.data && typeof error.response.data === 'object' && 'message' in error.response.data && typeof error.response.data.message === 'string') 
+          ? error.response.data.message 
+          : 'Invalid request data';
         break;
       case 500:
       case 502:
@@ -57,15 +74,20 @@ export const handleApiError = (error: any, fallbackMessage = 'An unexpected erro
         errorResponse.message = 'Server error. Please try again later.';
         break;
       default:
-        errorResponse.message = error.response.data?.message || fallbackMessage;
+        errorResponse.message = (error.response.data && typeof error.response.data === 'object' && 'message' in error.response.data && typeof error.response.data.message === 'string') 
+          ? error.response.data.message 
+          : fallbackMessage;
     }
-  } else if (error.request) {
+  } else if (isAxiosError(error) && error.request) {
     // Request was made but no response received
     errorResponse.type = ErrorType.NETWORK;
     errorResponse.message = 'Network error. Please check your connection.';
-  } else {
+  } else if (isAxiosError(error) && error.message) {
     // Error in setting up the request
-    errorResponse.message = error.message || fallbackMessage;
+    errorResponse.message = error.message;
+  } else if (error instanceof Error) {
+    // Standard JavaScript error
+    errorResponse.message = error.message;
   }
 
   // Show toast notification for the error
@@ -80,7 +102,7 @@ export const handleApiError = (error: any, fallbackMessage = 'An unexpected erro
  * @param fallbackMessage Optional fallback error message
  * @returns A function that returns a Promise resolving to the result or error
  */
-export const withErrorHandling = <T, Args extends any[]>(
+export const withErrorHandling = <T, Args extends unknown[]>(
   asyncFn: (...args: Args) => Promise<T>,
   fallbackMessage?: string
 ) => {

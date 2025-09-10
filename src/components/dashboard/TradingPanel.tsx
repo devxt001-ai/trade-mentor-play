@@ -7,15 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AlertTriangle, DollarSign, TrendingUp, Clock, ShieldCheck, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useMarketData } from "@/contexts/MarketDataContext";
-import { useTrading } from "@/contexts/TradingContext";
-import { useAuth } from "@/contexts/AuthContext";
+import { useMarketData } from "@/hooks/useMarketData";
+import type { StockQuote } from "@/contexts/MarketDataContext";
+import { useTrading } from "@/hooks/useTrading";
+import { useAuth } from "@/hooks/useAuth";
+import { usePortfolio } from "@/hooks/usePortfolio";
 import { toast } from "sonner";
 
 export const TradingPanel = () => {
   const [orderType, setOrderType] = useState("market");
-  const [quantity, setQuantity] = useState("");
-  const [price, setPrice] = useState("");
+  const [quantity, setQuantity] = useState<string>("");
+  const [price, setPrice] = useState<string>("");
   const [selectedStock, setSelectedStock] = useState("NSE:RELIANCE-EQ");
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -23,12 +25,14 @@ export const TradingPanel = () => {
   const { quotes, isLoading: isLoadingMarketData, fetchQuotes } = useMarketData();
   const { placeOrder, orders, getOrders, isLoading: isLoadingOrders } = useTrading();
   const { isAuthenticated } = useAuth();
+  const { portfolioSummary, holdings, loading: portfolioLoading } = usePortfolio();
   
-  // Hardcoded available funds for now (would come from API in production)
-  const availableFunds = 245000;
+  // Get available funds from portfolio context
+  const availableFunds = portfolioSummary?.availableCash || 0;
   
   // Get current price from quotes
-  const currentPrice = quotes[selectedStock]?.lastPrice || 0;
+  const currentQuote = quotes.find(q => q.symbol === selectedStock);
+  const currentPrice = currentQuote?.ltp || currentQuote?.lastPrice || 0;
   
   // Fetch quotes for default symbols when component mounts
   useEffect(() => {
@@ -41,7 +45,7 @@ export const TradingPanel = () => {
   
   const calculateOrderValue = () => {
     const qty = parseInt(quantity) || 0;
-    const orderPrice = orderType === "market" ? currentPrice : (parseFloat(price) || 0);
+    const orderPrice = orderType === 'market' ? currentPrice : (parseFloat(price) || 0);
     return qty * orderPrice;
   };
 
@@ -78,8 +82,9 @@ export const TradingPanel = () => {
         setQuantity("");
         setPrice("");
       }
-    } catch (error: any) {
-      toast.error(`Failed to place order: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      toast.error(`Failed to place order: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -110,8 +115,9 @@ export const TradingPanel = () => {
       if (response.success) {
         toast.success(`Sell order placed successfully: ${response.orderId}`);
       }
-    } catch (error: any) {
-      toast.error(`Failed to place sell order: ${error.message}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      toast.error(`Failed to place sell order: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -147,21 +153,11 @@ export const TradingPanel = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="NSE:RELIANCE-EQ">
-                        RELIANCE - ₹{quotes["NSE:RELIANCE-EQ"]?.lastPrice.toLocaleString() || "Loading..."}
-                      </SelectItem>
-                      <SelectItem value="NSE:TCS-EQ">
-                        TCS - ₹{quotes["NSE:TCS-EQ"]?.lastPrice.toLocaleString() || "Loading..."}
-                      </SelectItem>
-                      <SelectItem value="NSE:INFY-EQ">
-                        INFY - ₹{quotes["NSE:INFY-EQ"]?.lastPrice.toLocaleString() || "Loading..."}
-                      </SelectItem>
-                      <SelectItem value="NSE:HDFCBANK-EQ">
-                        HDFCBANK - ₹{quotes["NSE:HDFCBANK-EQ"]?.lastPrice.toLocaleString() || "Loading..."}
-                      </SelectItem>
-                      <SelectItem value="NSE:ICICIBANK-EQ">
-                        ICICIBANK - ₹{quotes["NSE:ICICIBANK-EQ"]?.lastPrice.toLocaleString() || "Loading..."}
-                      </SelectItem>
+                      {quotes.map((quote: StockQuote) => (
+                        <SelectItem key={quote.symbol} value={quote.symbol}>
+                          {quote.symbol} - ₹{quote.ltp?.toFixed(2) || 'N/A'}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -295,68 +291,102 @@ export const TradingPanel = () => {
             <TabsContent value="sell" className="space-y-4 mt-6">
               <div className="p-4 bg-muted/50 rounded-lg">
                 <h4 className="font-medium mb-3">Your Holdings</h4>
-                {isLoadingMarketData ? (
+                {portfolioLoading || isLoadingMarketData ? (
                   <div className="flex items-center justify-center p-4">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     <span className="ml-2 text-muted-foreground">Loading holdings...</span>
                   </div>
-                ) : (
+                ) : holdings && holdings.length > 0 ? (
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between p-2 bg-background rounded border">
-                      <div>
-                        <p className="font-medium">TCS</p>
-                        <p className="text-sm text-muted-foreground">
-                          50 shares @ ₹3,200 | Current: ₹{quotes["NSE:TCS-EQ"]?.lastPrice.toLocaleString() || "--"}
-                        </p>
-                      </div>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        className="border-destructive text-destructive hover:bg-destructive/10"
-                        onClick={() => handleSellOrder("NSE:TCS-EQ", 50)}
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sell"}
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-2 bg-background rounded border">
-                      <div>
-                        <p className="font-medium">INFY</p>
-                        <p className="text-sm text-muted-foreground">
-                          75 shares @ ₹1,650 | Current: ₹{quotes["NSE:INFY-EQ"]?.lastPrice.toLocaleString() || "--"}
-                        </p>
-                      </div>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        className="border-destructive text-destructive hover:bg-destructive/10"
-                        onClick={() => handleSellOrder("NSE:INFY-EQ", 75)}
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sell"}
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-2 bg-background rounded border">
-                      <div>
-                        <p className="font-medium">HDFCBANK</p>
-                        <p className="text-sm text-muted-foreground">
-                          40 shares @ ₹1,680 | Current: ₹{quotes["NSE:HDFCBANK-EQ"]?.lastPrice.toLocaleString() || "--"}
-                        </p>
-                      </div>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        className="border-destructive text-destructive hover:bg-destructive/10"
-                        onClick={() => handleSellOrder("NSE:HDFCBANK-EQ", 40)}
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sell"}
-                      </Button>
-                    </div>
+                    {holdings.map((holding) => {
+                      const symbol = holding.stock?.symbol || '';
+                      const currentQuote = quotes.find(q => q.symbol === symbol);
+                      const currentPrice = currentQuote?.ltp || currentQuote?.lastPrice || holding.current_price;
+                      const pnl = holding.unrealized_pnl;
+                      const pnlPercent = holding.unrealized_pnl_percent;
+                      
+                      return (
+                        <div key={holding.id} className="flex items-center justify-between p-2 bg-background rounded border">
+                          <div>
+                            <p className="font-medium">{holding.stock?.name || symbol}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {holding.quantity} shares @ ₹{holding.avg_buy_price.toLocaleString()} | Current: ₹{currentPrice?.toLocaleString() || "--"}
+                            </p>
+                            <p className={`text-xs ${
+                              pnl >= 0 ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              P&L: ₹{pnl.toLocaleString()} ({pnlPercent.toFixed(2)}%)
+                            </p>
+                          </div>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="border-destructive text-destructive hover:bg-destructive/10"
+                            onClick={() => handleSellOrder(symbol, holding.quantity)}
+                            disabled={isSubmitting}
+                          >
+                            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sell"}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center p-4 text-muted-foreground">
+                    <p>No holdings found</p>
+                    <p className="text-sm">Start trading to build your portfolio</p>
                   </div>
                 )}
+              </div>
+              
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <h4 className="font-medium mb-3">Quick Sell</h4>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="sell-stock">Select Stock</Label>
+                    <Select value={selectedStock} onValueChange={setSelectedStock}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose from your holdings" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {holdings?.map((holding) => (
+                          <SelectItem key={holding.id} value={holding.stock?.symbol || ''}>
+                            {holding.stock?.name || holding.stock?.symbol} ({holding.quantity} shares)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="sell-quantity">Quantity</Label>
+                    <Input
+                      id="sell-quantity"
+                      type="number"
+                      placeholder="Enter quantity"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      max={holdings?.find(h => h.stock?.symbol === selectedStock)?.quantity || 0}
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Button 
+                      className="flex-1 bg-red-600 hover:bg-red-700"
+                      onClick={() => handleSellOrder(selectedStock, parseInt(quantity) || 0)}
+                      disabled={!selectedStock || parseInt(quantity) <= 0 || isSubmitting}
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        "Place Sell Order"
+                      )}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </TabsContent>
           </Tabs>
