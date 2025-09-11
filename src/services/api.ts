@@ -99,12 +99,12 @@ const api = axios.create({
   timeout: 10000,
 });
 
-// Add a request interceptor to include auth token
+// Add a request interceptor to include session token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("fyers_token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    const sessionToken = localStorage.getItem("supabase_session_token");
+    if (sessionToken) {
+      config.headers.Authorization = `Bearer ${sessionToken}`;
     }
     return config;
   },
@@ -117,9 +117,14 @@ api.interceptors.response.use(
   (error) => {
     // Handle authentication errors
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem("fyers_token");
+      localStorage.removeItem("supabase_session_token");
       // Redirect to login or show auth error
       console.error("Authentication error. Please login again.");
+      
+      // If we're not already on the login page, redirect
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
 
     // Log and format the error
@@ -131,56 +136,95 @@ api.interceptors.response.use(
 
 // Define interfaces for auth
 export interface LoginCredentials {
+  identifier: string; // email or client_id
+  password: string;
+}
+
+export interface RegisterCredentials {
   email: string;
   password: string;
 }
 
 export interface AuthResponse {
-  token: string;
-  user: {
+  success: boolean;
+  message?: string;
+  session_token?: string;
+  user?: {
     id: string;
     email: string;
-    name: string;
+    client_id: string;
+    created_at: string;
+    updated_at: string;
   };
-  success?: boolean;
+}
+
+export interface FyersAuthResponse {
+  success: boolean;
   message?: string;
+  auth_url?: string;
+  user?: {
+    id: string;
+    email: string;
+    client_id: string;
+    created_at: string;
+    updated_at: string;
+  };
 }
 
 // Auth API
 export const authAPI = {
+  register: withErrorHandling(
+    async (credentials: RegisterCredentials): Promise<AuthResponse> => {
+      const response = await api.post<AuthResponse>("/auth/register", credentials);
+      return response.data;
+    },
+    "Failed to register user"
+  ),
+
   login: withErrorHandling(
     async (credentials: LoginCredentials): Promise<AuthResponse> => {
       const response = await api.post<AuthResponse>("/auth/login", credentials);
       return response.data;
     },
-    "Failed to initiate login process"
+    "Failed to login"
   ),
 
-  getToken: withErrorHandling(
-    async (): Promise<{ success: boolean; token: string }> => {
-      const response = await api.get<{ success: boolean; token: string }>(
-        "/auth/token"
-      );
-      if (response.data.success && response.data.token) {
-        localStorage.setItem("fyers_token", response.data.token);
-      }
+  verifySession: withErrorHandling(async (): Promise<AuthResponse> => {
+    const response = await api.get<AuthResponse>("/auth/verify");
+    return response.data;
+  }, "Failed to verify session"),
+
+  getFyersAuthUrl: withErrorHandling(
+    async (): Promise<FyersAuthResponse> => {
+      const response = await api.get<FyersAuthResponse>("/auth/fyers-auth-url");
       return response.data;
     },
-    "Failed to generate authentication token"
+    "Failed to get Fyers auth URL"
   ),
 
-  verifyToken: withErrorHandling(async (): Promise<AuthVerifyResponse> => {
-    const response = await api.get<{ valid: boolean }>("/auth/verify");
-    return response.data;
-  }, "Failed to verify authentication token"),
+  completeFyersAuth: withErrorHandling(
+    async (authCode: string): Promise<FyersAuthResponse> => {
+      const response = await api.post<FyersAuthResponse>("/auth/fyers-token", {
+        auth_code: authCode
+      });
+      return response.data;
+    },
+    "Failed to complete Fyers authentication"
+  ),
 
   logout: withErrorHandling(async (): Promise<void> => {
-    // Clear all caches on logout
+    try {
+      await api.post("/auth/logout");
+    } catch (error) {
+      // Even if logout fails on server, clear local data
+      console.warn("Server logout failed, clearing local data anyway", error);
+    }
+    
+    // Clear all caches and local storage
     quotesCache.clear();
     historicalDataCache.clear();
     ordersCache.clear();
-
-    localStorage.removeItem("fyers_token");
+    localStorage.removeItem("supabase_session_token");
   }, "Failed to logout"),
 };
 

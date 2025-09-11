@@ -1,6 +1,5 @@
 import axios from 'axios';
 import NodeCache from 'node-cache';
-import { tokenCache } from './authService.js';
 
 // Cache for market data to reduce API calls
 const marketDataCache = new NodeCache({ stdTTL: 60 }); // 60 seconds TTL
@@ -53,6 +52,36 @@ export const getMarketData = async (symbols) => {
     
     const token = await getAccessToken();
     
+    // Check if we're using a mock token
+    if (token && token.startsWith('mock_access_token_')) {
+      console.log('Using mock token, returning mock market data');
+      
+      // Generate mock data for the requested symbols
+      const mockData = symbols.map(symbol => {
+        const basePrice = Math.random() * 1000 + 100; // Random price between 100-1100
+        const change = (Math.random() - 0.5) * 20; // Random change between -10 to +10
+        const percentChange = (change / basePrice) * 100;
+        
+        return {
+          symbol: symbol,
+          price: parseFloat(basePrice.toFixed(2)),
+          change: parseFloat(change.toFixed(2)),
+          percentChange: parseFloat(percentChange.toFixed(2)),
+          volume: Math.floor(Math.random() * 1000000),
+          open: parseFloat((basePrice - change).toFixed(2)),
+          high: parseFloat((basePrice + Math.random() * 10).toFixed(2)),
+          low: parseFloat((basePrice - Math.random() * 10).toFixed(2)),
+          previousClose: parseFloat((basePrice - change).toFixed(2)),
+          timestamp: Date.now(),
+        };
+      });
+      
+      // Cache the mock result
+      marketDataCache.set(cacheKey, mockData);
+      return mockData;
+    }
+    
+    // Real API call (will only work with real tokens)
     const response = await axios.get(`${API_BASE_URL}/quotes`, {
       params: {
         symbols: symbols.join(','),
@@ -107,6 +136,34 @@ export const getQuotes = async (symbols) => {
     
     const token = await getAccessToken();
     
+    // Check if we're using a mock token
+    if (token && token.startsWith('mock_access_token_')) {
+      console.log('Using mock token, returning mock quotes data');
+      
+      // Generate mock quotes data
+      const mockQuotes = symbols.map(symbol => {
+        const basePrice = Math.random() * 1000 + 100;
+        const change = (Math.random() - 0.5) * 20;
+        
+        return {
+          symbol: symbol,
+          ltp: parseFloat(basePrice.toFixed(2)),
+          ch: parseFloat(change.toFixed(2)),
+          chp: parseFloat(((change / basePrice) * 100).toFixed(2)),
+          bid: parseFloat((basePrice - 0.5).toFixed(2)),
+          ask: parseFloat((basePrice + 0.5).toFixed(2)),
+          volume: Math.floor(Math.random() * 1000000),
+          avg_price: parseFloat(basePrice.toFixed(2)),
+          timestamp: Date.now(),
+        };
+      });
+      
+      // Cache the mock result
+      marketDataCache.set(cacheKey, mockQuotes);
+      return mockQuotes;
+    }
+    
+    // Real API call
     const response = await axios.get(`${API_BASE_URL}/quotes-detailed`, {
       params: {
         symbols: symbols.join(','),

@@ -19,7 +19,7 @@ import {
 import { TrendingUp, TrendingDown, Activity, PieChart as PieChartIcon, BarChart3, Calendar, Loader2 } from "lucide-react";
 import { useMarketData } from "@/hooks/useMarketData";
 import { useTrading } from "@/hooks/useTrading";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { toast } from "sonner";

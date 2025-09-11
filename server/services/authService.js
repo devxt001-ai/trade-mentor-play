@@ -1,24 +1,35 @@
 import axios from "axios";
-import { authenticator } from "otplib";
+import { createClient } from "@supabase/supabase-js";
+import { fyersModel as FyersAPI } from "fyers-api-v3";
 import NodeCache from "node-cache";
+import { authenticator } from "otplib";
 
-// Cache for storing tokens to avoid unnecessary API calls
-export const tokenCache = new NodeCache({ stdTTL: 3600 }); // 1 hour TTL
+// Initialize Supabase client
+const supabaseUrl = process.env.VITE_SUPABASE_URL || "https://gruioififeukeqmlwuup.supabase.co";
+const supabaseServiceKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdydWlvaWZpZmV1a2VxbWx3dXVwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NzA5NDkxNywiZXhwIjoyMDcyNjcwOTE3fQ.service_role_key_placeholder";
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Fyers API credentials from environment variables
-const CLIENT_ID = process.env.FYERS_CLIENT_ID || "YJ00857";
+// Cache for storing tokens (TTL: 1 hour)
+const tokenCache = new NodeCache({ stdTTL: 3600 });
+
+// Environment variables
 const APP_ID = process.env.FYERS_APP_ID || "6BQQUK21RL-100";
-const SECRET_ID = process.env.FYERS_SECRET_ID || "0OITL01M6R";
-const PIN = process.env.FYERS_PIN || "0000";
-const TOTP_SECRET =
-  process.env.FYERS_TOTP_SECRET || "J3272VEVVSUWMIXJCBNFEJH7AAI2CBRS";
+const SECRET_KEY = process.env.FYERS_SECRET_ID || "0OITL01M6R";
 const REDIRECT_URI =
-  process.env.FYERS_REDIRECT_URI || "https://127.0.0.1:3000/";
+  process.env.FYERS_REDIRECT_URI ||
+  "https://127.0.0.1:3000/";
+const TOTP_SECRET = process.env.FYERS_TOTP_SECRET || "J3272VEVVSUWMIXJCBNFEJH7AAI2CBRS";
 
-// Fyers API endpoints
-const API_BASE_URL = "https://api.fyers.in/api/v2";
-const AUTH_URL = "https://api.fyers.in/api/v2/generate-authcode";
-const TOKEN_URL = "https://api.fyers.in/api/v2/validate-authcode";
+// Initialize Fyers API
+const fyers = new FyersAPI();
+fyers.setAppId(APP_ID);
+fyers.setRedirectUrl(REDIRECT_URI);
+
+console.log("🔧 Auth Service Configuration:");
+console.log("- APP_ID:", APP_ID);
+console.log("- REDIRECT_URI:", REDIRECT_URI);
+console.log("- Supabase URL:", supabaseUrl);
 
 /**
  * Generate TOTP code using the provided secret
@@ -29,130 +40,330 @@ const generateTOTP = () => {
 };
 
 /**
- * Authenticate user with Fyers API
- * @returns {Promise<Object>} Authentication result
+ * Generate unique 7-character alphanumeric client ID
  */
-export const authenticateUser = async () => {
-  try {
-    // Check if we already have a valid token in cache
-    const cachedToken = tokenCache.get("access_token");
-    if (cachedToken) {
-      return { success: true, token: cachedToken };
-    }
-
-    // Step 1: Generate auth code
-    const authResponse = await axios.post(AUTH_URL, {
-      app_id: APP_ID,
-      redirect_uri: REDIRECT_URI,
-    });
-
-    if (
-      !authResponse.data ||
-      !authResponse.data.data ||
-      !authResponse.data.data.request_key
-    ) {
-      throw new Error("Failed to generate auth code");
-    }
-
-    const requestKey = authResponse.data.data.request_key;
-
-    // Step 2: Generate TOTP
-    const totp = generateTOTP();
-
-    // Step 3: Verify TOTP
-    const verifyResponse = await axios.post(`${API_BASE_URL}/verify-pin`, {
-      request_key: requestKey,
-      pin: PIN,
-      identity_type: "pin",
-    });
-
-    if (!verifyResponse.data || verifyResponse.data.code !== 200) {
-      throw new Error("PIN verification failed");
-    }
-
-    // Step 4: Verify TOTP
-    const totpResponse = await axios.post(`${API_BASE_URL}/verify-pin`, {
-      request_key: requestKey,
-      identity_type: "totp",
-      totp,
-    });
-
-    if (!totpResponse.data || totpResponse.data.code !== 200) {
-      throw new Error("TOTP verification failed");
-    }
-
-    // Step 5: Generate token
-    const tokenResult = await generateToken(requestKey);
-    return tokenResult;
-  } catch (error) {
-    console.error("Authentication error:", error);
-    throw new Error(`Authentication failed: ${error.message}`);
+const generateClientId = () => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let result = "";
+  for (let i = 0; i < 7; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
+  return result;
 };
 
 /**
- * Generate access token using the request key
- * @param {string} requestKey - Request key from auth process
- * @returns {Promise<Object>} Token generation result
+ * Register new user with Supabase Auth and generate client ID
  */
-export const generateToken = async (requestKey = null) => {
+const registerUser = async (email, password, fullName) => {
   try {
-    // If no request key is provided, we need to authenticate first
-    if (!requestKey) {
-      const authResult = await authenticateUser();
-      return authResult;
+    console.log("👤 Registering new user:", email);
+
+    // Create user with Supabase Auth
+    const { data: authData, error: authError } =
+      await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      });
+
+    if (authError) {
+      throw new Error(`Auth registration failed: ${authError.message}`);
     }
 
-    // Generate token using the request key
-    const tokenResponse = await axios.post(TOKEN_URL, {
-      grant_type: "authorization_code",
-      appIdHash: `${APP_ID}:${SECRET_ID}`,
-      code: requestKey,
-    });
+    // Generate unique client ID
+    let clientId;
+    let isUnique = false;
 
-    if (!tokenResponse.data || !tokenResponse.data.access_token) {
-      throw new Error("Failed to generate token");
+    while (!isUnique) {
+      clientId = generateClientId();
+      const { data: existingProfile } = await supabase
+        .from("profiles")
+        .select("client_id")
+        .eq("client_id", clientId)
+        .single();
+
+      if (!existingProfile) {
+        isUnique = true;
+      }
     }
 
-    const accessToken = tokenResponse.data.access_token;
+    // Create user profile with client ID
+    const { data: profileData, error: profileError } = await supabase
+      .from("profiles")
+      .insert({
+        user_id: authData.user.id,
+        email,
+        full_name: fullName,
+        client_id: clientId,
+      })
+      .select()
+      .single();
 
-    // Cache the token
-    tokenCache.set("access_token", accessToken);
+    if (profileError) {
+      throw new Error(`Profile creation failed: ${profileError.message}`);
+    }
+
+    console.log("✅ User registered successfully with client ID:", clientId);
 
     return {
       success: true,
-      token: accessToken,
-      expires_in: tokenResponse.data.expires_in || 86400, // Default to 24 hours
+      user: {
+        id: authData.user.id,
+        email,
+        full_name: fullName,
+        client_id: clientId,
+        created_at: profileData.created_at,
+        updated_at: profileData.updated_at,
+        fyers_access_token: profileData.fyers_access_token || null,
+      },
     };
   } catch (error) {
-    console.error("Token generation error:", error);
-    throw new Error(`Token generation failed: ${error.message}`);
+    console.error("❌ Registration error:", error.message);
+    throw error;
   }
 };
 
 /**
- * Verify if a token is valid
- * @param {string} token - Access token to verify
- * @returns {Promise<Object>} Verification result
+ * Login user with email/client_id and password
  */
-export const verifyToken = async (token) => {
+const loginUser = async (identifier, password) => {
   try {
-    // Make a simple API call to verify the token
-    const response = await axios.get(`${API_BASE_URL}/profile`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    console.log("🔐 Attempting login for:", identifier);
+
+    let email = identifier;
+
+    // Check if identifier is a client ID (7 chars alphanumeric)
+    if (/^[A-Z0-9]{7}$/.test(identifier)) {
+      console.log("🆔 Login with client ID detected");
+
+      // Get email from client ID
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("client_id", identifier)
+        .single();
+
+      if (profileError || !profile) {
+        throw new Error("Invalid client ID");
+      }
+
+      email = profile.email;
+      console.log("📧 Found email for client ID:", email);
+    }
+
+    // Authenticate with Supabase
+    const { data: authData, error: authError } =
+      await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+    if (authError) {
+      throw new Error(`Authentication failed: ${authError.message}`);
+    }
+
+    // Get user profile
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", authData.user.id)
+      .single();
+
+    if (profileError) {
+      throw new Error(`Profile fetch failed: ${profileError.message}`);
+    }
+
+    console.log("✅ User logged in successfully");
 
     return {
-      valid: true,
-      user: response.data.data,
+      success: true,
+      user: {
+        id: authData.user.id,
+        email: profile.email,
+        full_name: profile.full_name,
+        client_id: profile.client_id,
+        created_at: profile.created_at,
+        updated_at: profile.updated_at,
+        fyers_access_token: profile.fyers_access_token || null,
+      },
+      session: authData.session,
     };
   } catch (error) {
-    // If the API call fails, the token is invalid
-    return {
-      valid: false,
-      error: error.message,
-    };
+    console.error("❌ Login error:", error.message);
+    throw error;
   }
+};
+
+/**
+ * Generate Fyers OAuth URL
+ */
+const generateFyersAuthUrl = async (userId) => {
+  try {
+    console.log("🔗 Generating Fyers OAuth URL for user:", userId);
+
+    // Generate state parameter for security
+    const state = `${userId}_${Date.now()}`;
+
+    // Generate Fyers auth URL
+    const authUrl = fyers.generateAuthCode();
+
+    console.log("✅ Generated Fyers auth URL:", authUrl);
+
+    return {
+      success: true,
+      authUrl,
+      state,
+    };
+  } catch (error) {
+    console.error("❌ Error generating Fyers auth URL:", error.message);
+    throw error;
+  }
+};
+
+/**
+ * Exchange Fyers auth code for access token
+ */
+const exchangeFyersAuthCode = async (authCode, userId) => {
+  try {
+    console.log("🎫 Exchanging Fyers auth code for access token");
+
+    // Use Fyers API to generate access token
+    const tokenResponse = await fyers.generate_access_token({
+      secret_key: SECRET_KEY,
+      auth_code: authCode,
+    });
+
+    if (tokenResponse.s !== "ok") {
+      throw new Error(`Fyers token exchange failed: ${tokenResponse.message}`);
+    }
+
+    // Store token in cache with user association
+    const cacheKey = `fyers_token_${userId}`;
+    tokenCache.set(cacheKey, {
+      access_token: tokenResponse.access_token,
+      refresh_token: tokenResponse.refresh_token,
+      expires_at: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+    });
+
+    // Also store the access token in the user's profile in the database
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({
+        fyers_access_token: tokenResponse.access_token,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId);
+
+    if (updateError) {
+      console.error("❌ Failed to update profile with Fyers token:", updateError.message);
+      // Don't throw error here as the token is still cached and functional
+    }
+
+    console.log("✅ Fyers token generated, cached, and stored in database successfully");
+
+    return {
+      success: true,
+      access_token: tokenResponse.access_token,
+      refresh_token: tokenResponse.refresh_token,
+    };
+  } catch (error) {
+    console.error("❌ Fyers token exchange error:", error.message);
+    throw error;
+  }
+};
+
+/**
+ * Get Fyers access token for user
+ */
+const getFyersToken = (userId) => {
+  const cacheKey = `fyers_token_${userId}`;
+  const tokenData = tokenCache.get(cacheKey);
+
+  if (!tokenData) {
+    throw new Error(
+      "No Fyers token found. Please complete Fyers authentication."
+    );
+  }
+
+  if (Date.now() > tokenData.expires_at) {
+    tokenCache.del(cacheKey);
+    throw new Error("Fyers token expired. Please re-authenticate.");
+  }
+
+  return tokenData.access_token;
+};
+
+/**
+ * Verify Supabase session token
+ */
+const verifySession = async (sessionToken) => {
+  try {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(sessionToken);
+
+    if (error || !user) {
+      throw new Error("Invalid session token");
+    }
+
+    // Get user profile
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", user.id)
+      .single();
+
+    if (profileError) {
+      throw new Error("Profile not found");
+    }
+
+    return {
+      success: true,
+      user: {
+        id: user.id,
+        email: profile.email,
+        full_name: profile.full_name,
+        client_id: profile.client_id,
+        created_at: profile.created_at,
+        updated_at: profile.updated_at,
+        fyers_access_token: profile.fyers_access_token || null,
+      },
+    };
+  } catch (error) {
+    console.error("❌ Session verification error:", error.message);
+    throw error;
+  }
+};
+
+/**
+ * Logout user and clear tokens
+ */
+const logoutUser = async (userId, sessionToken) => {
+  try {
+    // Sign out from Supabase
+    await supabase.auth.admin.signOut(sessionToken);
+
+    // Clear Fyers token from cache
+    const cacheKey = `fyers_token_${userId}`;
+    tokenCache.del(cacheKey);
+
+    console.log("✅ User logged out successfully");
+
+    return { success: true };
+  } catch (error) {
+    console.error("❌ Logout error:", error.message);
+    throw error;
+  }
+};
+
+// Export all functions
+export {
+  registerUser,
+  loginUser,
+  generateFyersAuthUrl,
+  exchangeFyersAuthCode,
+  getFyersToken,
+  verifySession,
+  logoutUser,
 };

@@ -10,7 +10,7 @@ import { useState, useEffect } from "react";
 import { useMarketData } from "@/hooks/useMarketData";
 import type { StockQuote } from "@/contexts/MarketDataContext";
 import { useTrading } from "@/hooks/useTrading";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/contexts/AuthContext";
 import { usePortfolio } from "@/hooks/usePortfolio";
 import { toast } from "sonner";
 

@@ -1,5 +1,6 @@
 import express from 'express';
 import { placeOrder, getOrderStatus, getOrders, modifyOrder, cancelOrder } from '../services/tradingService.js';
+import { fyersAuthMiddleware } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -7,7 +8,7 @@ const router = express.Router();
  * @route POST /api/trading/order
  * @desc Place a new order
  */
-router.post('/order', async (req, res, next) => {
+router.post('/order', fyersAuthMiddleware, async (req, res, next) => {
   try {
     const orderDetails = req.body;
     if (!orderDetails || !orderDetails.symbol || !orderDetails.qty || !orderDetails.type) {
@@ -28,7 +29,7 @@ router.post('/order', async (req, res, next) => {
  * @route GET /api/trading/orders
  * @desc Get all orders
  */
-router.get('/orders', async (req, res, next) => {
+router.get('/orders', fyersAuthMiddleware, async (req, res, next) => {
   try {
     const result = await getOrders();
     res.json(result);
@@ -41,7 +42,7 @@ router.get('/orders', async (req, res, next) => {
  * @route GET /api/trading/order/:orderId
  * @desc Get status of a specific order
  */
-router.get('/order/:orderId', async (req, res, next) => {
+router.get('/order/:orderId', fyersAuthMiddleware, async (req, res, next) => {
   try {
     const { orderId } = req.params;
     if (!orderId) {
@@ -59,7 +60,7 @@ router.get('/order/:orderId', async (req, res, next) => {
  * @route PUT /api/trading/order/:orderId
  * @desc Modify an existing order
  */
-router.put('/order/:orderId', async (req, res, next) => {
+router.put('/order/:orderId', fyersAuthMiddleware, async (req, res, next) => {
   try {
     const { orderId } = req.params;
     const orderDetails = req.body;
@@ -81,7 +82,7 @@ router.put('/order/:orderId', async (req, res, next) => {
  * @route DELETE /api/trading/order/:orderId
  * @desc Cancel an order
  */
-router.delete('/order/:orderId', async (req, res, next) => {
+router.delete('/order/:orderId', fyersAuthMiddleware, async (req, res, next) => {
   try {
     const { orderId } = req.params;
     if (!orderId) {

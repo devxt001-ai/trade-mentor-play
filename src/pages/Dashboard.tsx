@@ -13,7 +13,10 @@ import {
   Activity,
   User,
   Settings,
-  LogOut
+  LogOut,
+  Link,
+  CheckCircle,
+  AlertCircle
 } from "lucide-react";
 
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
@@ -22,8 +25,20 @@ import { TradingPanel } from "@/components/dashboard/TradingPanel";
 import { PortfolioAnalytics } from "@/components/dashboard/PortfolioAnalytics";
 import { Leaderboard } from "@/components/dashboard/Leaderboard";
 import { NotificationsPanel } from "@/components/dashboard/NotificationsPanel";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 export const Dashboard = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+  
+  const fyersConnected = user?.fyers_access_token ? true : false;
+  
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navigation */}
@@ -38,10 +53,37 @@ export const Dashboard = () => {
             </div>
             
             <div className="flex items-center gap-4">
+              {/* Fyers Connection Status */}
+              <div className="flex items-center gap-2">
+                {fyersConnected ? (
+                  <div className="flex items-center gap-2 bg-success/10 px-3 py-1 rounded-full">
+                    <CheckCircle className="w-4 h-4 text-success" />
+                    <span className="text-sm font-medium text-success">Fyers Connected</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 bg-warning/10 px-3 py-1 rounded-full">
+                      <AlertCircle className="w-4 h-4 text-warning" />
+                      <span className="text-sm font-medium text-warning">Setup Required</span>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => navigate('/fyers-setup')}
+                    >
+                      <Link className="w-4 h-4 mr-2" />
+                      Connect Fyers
+                    </Button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Portfolio Value */}
               <div className="flex items-center gap-2 bg-success/10 px-3 py-1 rounded-full">
                 <DollarSign className="w-4 h-4 text-success" />
                 <span className="text-sm font-medium text-success">₹9,84,750</span>
               </div>
+              
               <Button variant="ghost" size="sm">
                 <Bell className="w-4 h-4" />
               </Button>
@@ -50,6 +92,9 @@ export const Dashboard = () => {
               </Button>
               <Button variant="ghost" size="sm">
                 <Settings className="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleLogout}>
+                <LogOut className="w-4 h-4" />
               </Button>
             </div>
           </div>

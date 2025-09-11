@@ -1,5 +1,6 @@
 import express from 'express';
 import { getMarketData, getQuotes, getHistoricalData, getMarketDepth, getAvailableStocks } from '../services/marketDataService.js';
+import { authMiddleware } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -7,7 +8,7 @@ const router = express.Router();
  * @route GET /api/market/data
  * @desc Get market data for multiple symbols
  */
-router.get('/data', async (req, res, next) => {
+router.get('/data', authMiddleware, async (req, res, next) => {
   try {
     const { symbols } = req.query;
     if (!symbols) {
@@ -26,7 +27,7 @@ router.get('/data', async (req, res, next) => {
  * @route GET /api/market/quotes
  * @desc Get detailed quotes for specific symbols
  */
-router.get('/quotes', async (req, res, next) => {
+router.get('/quotes', authMiddleware, async (req, res, next) => {
   try {
     const { symbols } = req.query;
     if (!symbols) {
@@ -45,7 +46,7 @@ router.get('/quotes', async (req, res, next) => {
  * @route GET /api/market/history
  * @desc Get historical data for a symbol
  */
-router.get('/history', async (req, res, next) => {
+router.get('/history', authMiddleware, async (req, res, next) => {
   try {
     const { symbol, resolution, from, to } = req.query;
     if (!symbol || !resolution || !from || !to) {
@@ -66,7 +67,7 @@ router.get('/history', async (req, res, next) => {
  * @route GET /api/market/depth
  * @desc Get market depth for a symbol
  */
-router.get('/depth', async (req, res, next) => {
+router.get('/depth', authMiddleware, async (req, res, next) => {
   try {
     const { symbol } = req.query;
     if (!symbol) {
